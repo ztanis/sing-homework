@@ -50,6 +50,7 @@ function MusicNotation() {
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isAudioReady, setIsAudioReady] = useState(false);
+  const [autoPlayNext, setAutoPlayNext] = useState(false);
   const samplerRef = useRef<Tone.Sampler | null>(null);
 
   const validateNote = (note: string): boolean => {
@@ -493,8 +494,6 @@ function MusicNotation() {
         Tone.Transport.schedule((time) => {
           samplerRef.current!.triggerAttackRelease(toneNote, noteDuration, time);
         }, currentTime);
-
-        //samplerRef.current.triggerAttackRelease(toneNote, noteDuration, currentTime);
         currentTime += noteDuration + pauseDuration;
       }
     }
@@ -503,6 +502,15 @@ function MusicNotation() {
     Tone.Transport.schedule(() => {
       console.log('Playback ended for piece id:', piece.id);
       setPlayingPieceId(null);
+      
+      // Auto play next piece if enabled
+      if (autoPlayNext) {
+        const currentIndex = currentExercise.pieces.findIndex(p => p.id === piece.id);
+        if (currentIndex < currentExercise.pieces.length - 1) {
+          const nextPiece = currentExercise.pieces[currentIndex + 1];
+          setTimeout(() => playPiece(nextPiece), 500); // Small delay before playing next piece
+        }
+      }
     }, currentTime);
 
     // Start playback
@@ -626,6 +634,17 @@ function MusicNotation() {
             <option value="1.75">1.75x</option>
             <option value="2">2x</option>
           </select>
+          <div className="flex items-center space-x-2 ml-4">
+            <span className="text-lg font-semibold text-gray-800">Auto play next:</span>
+            <button
+              onClick={() => setAutoPlayNext(!autoPlayNext)}
+              className={`px-3 py-1 rounded ${
+                autoPlayNext ? 'bg-green-600' : 'bg-gray-600'
+              } text-white hover:opacity-90`}
+            >
+              {autoPlayNext ? 'On' : 'Off'}
+            </button>
+          </div>
         </div>
       </div>
 
