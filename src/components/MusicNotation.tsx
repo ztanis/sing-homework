@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 
 interface Piece {
@@ -45,6 +45,9 @@ function MusicNotation() {
     const pieces = currentExercise.pieces;
     return new Set(pieces.length > 0 ? [pieces[pieces.length - 1].id] : []);
   });
+  const [showHelp, setShowHelp] = useState(false);
+  const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
@@ -400,6 +403,89 @@ function MusicNotation() {
     }
   };
 
+  // Function to convert note to frequency
+  const noteToFrequency = (note: string): number => {
+    if (note === '|') return 0;
+    
+    const noteMap: { [key: string]: number } = {
+      'c': 0, 'c#': 1, 'db': 1,
+      'd': 2, 'd#': 3, 'eb': 3,
+      'e': 4,
+      'f': 5, 'f#': 6, 'gb': 6,
+      'g': 7, 'g#': 8, 'ab': 8,
+      'a': 9, 'a#': 10, 'bb': 10,
+      'b': 11
+    };
+
+    const [noteName, octave] = note.split('/');
+    const baseNote = noteName.replace(/[#b]/, '');
+    const accidental = noteName.includes('#') ? '#' : noteName.includes('b') ? 'b' : '';
+    const noteKey = baseNote + accidental;
+    
+    const noteNumber = noteMap[noteKey];
+    const octaveNumber = parseInt(octave);
+    
+    // A4 = 440Hz
+    return 440 * Math.pow(2, (noteNumber + (octaveNumber - 4) * 12) / 12);
+  };
+
+  // Function to play a note
+  const playNote = async (frequency: number, duration: number = 0.5) => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+    
+    const audioContext = audioContextRef.current;
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    
+    // Add some attack and release to make it sound more like a piano
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + duration);
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + duration);
+  };
+
+  // Function to play a piece
+  const playPiece = async (piece: Piece) => {
+    if (playingPieceId !== null) {
+      // Stop current playback
+      if (audioContextRef.current) {
+        await audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      setPlayingPieceId(null);
+      return;
+    }
+
+    setPlayingPieceId(piece.id);
+    
+    for (const note of piece.notes) {
+      if (note === '|') {
+        // Pause between measures
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+      
+      const frequency = noteToFrequency(note);
+      if (frequency > 0) {
+        await playNote(frequency);
+        // Small pause between notes
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    setPlayingPieceId(null);
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -450,31 +536,52 @@ function MusicNotation() {
         </div>
       )}
 
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 className="text-lg font-semibold text-blue-800 mb-2">How to Write Notation</h3>
-        <div className="space-y-2 text-blue-700">
-          <p><strong>Notes Format:</strong> Use note name and octave (e.g., c/4, d/4, e/4, f/4)</p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li>Note names: a, b, c, d, e, f, g</li>
-            <li>Accidentals: use # for sharp (e.g., c#/4) or b for flat (e.g., cb/4)</li>
-            <li>Octave numbers: 3 (low) to 5 (high)</li>
-            <li>Separate notes with spaces</li>
-            <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
-            <li>Examples: 
-              <ul className="list-disc pl-5 mt-1">
-                <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4</code> - basic notes</li>
-                <li><code className="bg-blue-100 px-1 rounded">c#/4 db/4 e/4 f#/4</code> - with accidentals</li>
-                <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code> - with bar line</li>
-              </ul>
-            </li>
-          </ul>
-          <p><strong>Lyrics Format:</strong> One word per note, separated by spaces</p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li>Each word will appear under its corresponding note</li>
-            <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to separate lyrics for different measures</li>
-            <li>Example: <code className="bg-blue-100 px-1 rounded">Do Re Mi Fa | Sol La Ti Do</code></li>
-          </ul>
-        </div>
+      {/* Collapsible Help Section */}
+      <div className="bg-blue-50 rounded-lg border border-blue-200">
+        <button
+          className="w-full flex justify-between items-center px-4 py-3 focus:outline-none"
+          onClick={() => setShowHelp((prev) => !prev)}
+        >
+          <span className="text-lg font-semibold text-blue-800">How to Write Notation</span>
+          <svg
+            className={`w-5 h-5 transform transition-transform ${showHelp ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+        {showHelp && (
+          <div className="p-4 space-y-2 text-blue-700 border-t border-blue-200">
+            <p><strong>Notes Format:</strong> Use note name and octave (e.g., c/4, d/4, e/4, f/4)</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Note names: a, b, c, d, e, f, g</li>
+              <li>Accidentals: use # for sharp (e.g., c#/4) or b for flat (e.g., cb/4)</li>
+              <li>Octave numbers: 3 (low) to 5 (high)</li>
+              <li>Separate notes with spaces</li>
+              <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
+              <li>Examples: 
+                <ul className="list-disc pl-5 mt-1">
+                  <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4</code> - basic notes</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c#/4 db/4 e/4 f#/4</code> - with accidentals</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code> - with bar line</li>
+                </ul>
+              </li>
+            </ul>
+            <p><strong>Lyrics Format:</strong> One word per note, separated by spaces</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Each word will appear under its corresponding note</li>
+              <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to separate lyrics for different measures</li>
+              <li>Example: <code className="bg-blue-100 px-1 rounded">Do Re Mi Fa | Sol La Ti Do</code></li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {currentExercise.pieces.map((piece) => (
@@ -487,6 +594,19 @@ function MusicNotation() {
               <div className="flex items-center space-x-4">
                 <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
                 <div className="flex space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playPiece(piece);
+                    }}
+                    className={`px-3 py-1 rounded ${
+                      playingPieceId === piece.id
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-green-600 hover:bg-green-700'
+                    } text-white`}
+                  >
+                    {playingPieceId === piece.id ? 'Stop' : 'Play'}
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
