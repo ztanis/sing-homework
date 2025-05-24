@@ -1,47 +1,144 @@
-import { useEffect, useRef } from 'react';
-import { Factory } from 'vexflow';
+import { useEffect, useRef, useState } from 'react';
+import { Factory, Annotation, BarlineType } from 'vexflow';
 
 function MusicNotation() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [noteInput, setNoteInput] = useState('c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5');
+  const [lyricsInput, setLyricsInput] = useState('Do Re Mi Fa | Sol La Ti Do');
+  const [notes, setNotes] = useState<string[]>(['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5']);
+  const [lyrics, setLyrics] = useState<string[]>(['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    containerRef.current.innerHTML = '';
 
-    // Create a new VexFlow factory
-    const factory = new Factory({ 
-      renderer: { 
-        elementId: containerRef.current.id, 
-        width: 500, 
-        height: 200 
-      } 
+    const factory = new Factory({
+      renderer: {
+        elementId: containerRef.current.id,
+        width: 800,
+        height: 200,
+      },
     });
 
-    // Create the stave
-    const stave = factory.Stave({ x: 10, y: 40, width: 400 });
-    stave.addClef('treble').addTimeSignature('4/4');
-    stave.setContext(factory.getContext()).draw();
+    // Split notes and lyrics into measures
+    const measures: { notes: string[], lyrics: string[] }[] = [];
+    let currentMeasure = { notes: [] as string[], lyrics: [] as string[] };
+    
+    notes.forEach((note, i) => {
+      if (note === '|') {
+        if (currentMeasure.notes.length > 0) {
+          measures.push(currentMeasure);
+          currentMeasure = { notes: [], lyrics: [] };
+        }
+      } else {
+        currentMeasure.notes.push(note);
+        if (lyrics[i]) currentMeasure.lyrics.push(lyrics[i]);
+      }
+    });
+    if (currentMeasure.notes.length > 0) {
+      measures.push(currentMeasure);
+    }
 
-    // Create the notes
-    const notes = [
-      factory.StaveNote({ keys: ['c/4'], duration: 'q' }),
-      factory.StaveNote({ keys: ['d/4'], duration: 'q' }),
-      factory.StaveNote({ keys: ['e/4'], duration: 'q' }),
-      factory.StaveNote({ keys: ['f/4'], duration: 'q' })
-    ];
+    // Create staves for each measure
+    measures.forEach((measure, index) => {
+      const x = 10 + index * 410; // 400 width + 10 padding
+      const stave = factory.Stave({ x, y: 40, width: 400 });
+      
+      // Add clef only to first measure
+      if (index === 0) {
+        stave.addClef('treble').addTimeSignature('4/4');
+      }
+      
+      stave.setContext(factory.getContext()).draw();
 
-    // Create a voice and add the notes
-    const voice = factory.Voice({ time: '4/4' });
-    voice.addTickables(notes);
+      // Create the notes for this measure
+      const staveNotes = measure.notes.map((note) =>
+        factory.StaveNote({ keys: [note], duration: 'q' })
+      );
 
-    // Format and justify the notes
-    factory.Formatter().joinVoices([voice]).format([voice], 400);
+      // Add lyrics as annotations
+      staveNotes.forEach((note, i) => {
+        if (measure.lyrics[i]) {
+          const annotation = factory.Annotation({ 
+            text: measure.lyrics[i], 
+            font: { family: 'Arial', size: 14, weight: '' }, 
+            vJustify: Annotation.VerticalJustify.BOTTOM 
+          });
+          note.addModifier(annotation, 0);
+        }
+      });
 
-    // Render voice
-    voice.draw(factory.getContext(), stave);
-  }, []);
+      const voice = factory.Voice({ time: '4/4' });
+      voice.addTickables(staveNotes);
+      factory.Formatter().joinVoices([voice]).format([voice], 400);
+      voice.draw(factory.getContext(), stave);
+
+      // Add barline at the end of each measure except the last one
+      if (index < measures.length - 1) {
+        stave.setEndBarType(BarlineType.SINGLE);
+        stave.draw();
+      }
+    });
+  }, [notes, lyrics]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const noteList = noteInput.trim().split(/\s+/);
+    const lyricList = lyricsInput.trim().split(/\s+/);
+    setNotes(noteList);
+    setLyrics(lyricList);
+  };
 
   return (
-    <div ref={containerRef} id="music-notation" className="bg-white p-4 rounded-lg shadow-lg" />
+    <div className="space-y-4">
+      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+        <h3 className="text-lg font-semibold text-blue-800 mb-2">How to Write Notation</h3>
+        <div className="space-y-2 text-blue-700">
+          <p><strong>Notes Format:</strong> Use note name and octave (e.g., c/4, d/4, e/4, f/4)</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Note names: a, b, c, d, e, f, g</li>
+            <li>Octave numbers: 3 (low) to 5 (high)</li>
+            <li>Separate notes with spaces</li>
+            <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
+            <li>Example: <code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code></li>
+          </ul>
+          <p><strong>Lyrics Format:</strong> One word per note, separated by spaces</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Each word will appear under its corresponding note</li>
+            <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to separate lyrics for different measures</li>
+            <li>Example: <code className="bg-blue-100 px-1 rounded">Do Re Mi Fa | Sol La Ti Do</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-4 items-end">
+        <div>
+          <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
+          <input
+            type="text"
+            value={noteInput}
+            onChange={e => setNoteInput(e.target.value)}
+            className="border rounded px-2 py-1 w-96"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
+          <input
+            type="text"
+            value={lyricsInput}
+            onChange={e => setLyricsInput(e.target.value)}
+            className="border rounded px-2 py-1 w-96"
+          />
+        </div>
+        <button
+          type="submit"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Update
+        </button>
+      </form>
+      <div ref={containerRef} id="music-notation" className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto" />
+    </div>
   );
 }
 
