@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
+import * as Tone from 'tone';
 
 interface Piece {
   id: number;
@@ -47,9 +48,9 @@ function MusicNotation() {
   });
   const [showHelp, setShowHelp] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const reverbNodeRef = useRef<ConvolverNode | null>(null);
+  const [isAudioReady, setIsAudioReady] = useState(false);
+  const samplerRef = useRef<Tone.Sampler | null>(null);
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
@@ -203,6 +204,37 @@ function MusicNotation() {
       });
     });
   }, [currentExercise]);
+
+  // Initialize Tone.js sampler
+  useEffect(() => {
+    const initAudio = async () => {
+      // Create a new sampler
+      const sampler = new Tone.Sampler({
+        urls: {
+          "C4": "C4.mp3",
+          "D#4": "Ds4.mp3",
+          "F#4": "Fs4.mp3",
+          "A4": "A4.mp3",
+        },
+        release: 1,
+        baseUrl: "https://tonejs.github.io/audio/salamander/",
+      }).toDestination();
+
+      // Wait for the samples to load
+      await Tone.loaded();
+      samplerRef.current = sampler;
+      setIsAudioReady(true);
+    };
+
+    initAudio();
+
+    // Cleanup
+    return () => {
+      if (samplerRef.current) {
+        samplerRef.current.dispose();
+      }
+    };
+  }, []);
 
   const handleSubmit = (pieceId: number) => (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,207 +437,65 @@ function MusicNotation() {
     }
   };
 
-  // Function to convert note to frequency
-  const noteToFrequency = (note: string): number => {
-    if (note === '|') return 0;
+  // Function to convert note to Tone.js format
+  const noteToToneFormat = (note: string): string => {
+    if (note === '|') return '';
     
-    const noteMap: { [key: string]: number } = {
-      'c': 0, 'c#': 1, 'db': 1,
-      'd': 2, 'd#': 3, 'eb': 3,
-      'e': 4,
-      'f': 5, 'f#': 6, 'gb': 6,
-      'g': 7, 'g#': 8, 'ab': 8,
-      'a': 9, 'a#': 10, 'bb': 10,
-      'b': 11
-    };
-
     const [noteName, octave] = note.split('/');
     const baseNote = noteName.replace(/[#b]/, '');
     const accidental = noteName.includes('#') ? '#' : noteName.includes('b') ? 'b' : '';
-    const noteKey = baseNote + accidental;
     
-    const noteNumber = noteMap[noteKey];
-    const octaveNumber = parseInt(octave);
-    
-    // A4 = 440Hz
-    return 440 * Math.pow(2, (noteNumber + (octaveNumber - 4) * 12) / 12);
+    return `${baseNote.toUpperCase()}${accidental}${octave}`;
   };
 
-  // Function to create reverb impulse response
-  const createReverb = async (audioContext: AudioContext) => {
-    const sampleRate = audioContext.sampleRate;
-    const length = sampleRate * 2; // 2 seconds of reverb
-    const impulse = audioContext.createBuffer(2, length, sampleRate);
-    
-    for (let channel = 0; channel < 2; channel++) {
-      const channelData = impulse.getChannelData(channel);
-      for (let i = 0; i < length; i++) {
-        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
-      }
-    }
-    
-    const convolver = audioContext.createConvolver();
-    convolver.buffer = impulse;
-    return convolver;
-  };
-
-  // Function to play a note with improved grand piano sound
-  const playNote = async (frequency: number, duration: number = 0.5) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
-      reverbNodeRef.current = await createReverb(audioContextRef.current);
-    }
-    
-    const audioContext = audioContextRef.current;
-    const reverbNode = reverbNodeRef.current!;
-
-    // --- Hammer transient (percussive click) ---
-    const hammerOsc = audioContext.createOscillator();
-    hammerOsc.type = 'triangle';
-    hammerOsc.frequency.setValueAtTime(frequency * 8, audioContext.currentTime);
-    const hammerGain = audioContext.createGain();
-    hammerGain.gain.setValueAtTime(0.25, audioContext.currentTime);
-    hammerGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.025); // very short
-    hammerOsc.connect(hammerGain);
-
-    // --- Main oscillators (fundamental + harmonics, some detuned) ---
-    const mainOsc = audioContext.createOscillator();
-    mainOsc.type = 'sine';
-    mainOsc.frequency.setValueAtTime(frequency, audioContext.currentTime);
-
-    const harmonicOsc1 = audioContext.createOscillator();
-    harmonicOsc1.type = 'triangle';
-    harmonicOsc1.frequency.setValueAtTime(frequency * 2, audioContext.currentTime);
-
-    const harmonicOsc2 = audioContext.createOscillator();
-    harmonicOsc2.type = 'sine';
-    harmonicOsc2.frequency.setValueAtTime(frequency * 3.01, audioContext.currentTime); // slight detune
-
-    const harmonicOsc3 = audioContext.createOscillator();
-    harmonicOsc3.type = 'triangle';
-    harmonicOsc3.frequency.setValueAtTime(frequency * 4.02, audioContext.currentTime); // slight detune
-
-    // --- Gain nodes for each oscillator ---
-    const mainGain = audioContext.createGain();
-    const harmonicGain1 = audioContext.createGain();
-    const harmonicGain2 = audioContext.createGain();
-    const harmonicGain3 = audioContext.createGain();
-
-    // --- Master gain for envelope ---
-    const masterGain = audioContext.createGain();
-    masterGain.gain.setValueAtTime(0, audioContext.currentTime);
-
-    // --- Lowpass filter for mellow decay ---
-    const lowpass = audioContext.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(8000, audioContext.currentTime);
-    lowpass.Q.value = 1;
-
-    // --- Compressor for dynamics ---
-    const compressor = audioContext.createDynamicsCompressor();
-    compressor.threshold.setValueAtTime(-50, audioContext.currentTime);
-    compressor.knee.setValueAtTime(40, audioContext.currentTime);
-    compressor.ratio.setValueAtTime(12, audioContext.currentTime);
-    compressor.attack.setValueAtTime(0, audioContext.currentTime);
-    compressor.release.setValueAtTime(0.25, audioContext.currentTime);
-
-    // --- Connect oscillators to gains ---
-    mainOsc.connect(mainGain);
-    harmonicOsc1.connect(harmonicGain1);
-    harmonicOsc2.connect(harmonicGain2);
-    harmonicOsc3.connect(harmonicGain3);
-    hammerGain.connect(masterGain);
-    mainGain.connect(masterGain);
-    harmonicGain1.connect(masterGain);
-    harmonicGain2.connect(masterGain);
-    harmonicGain3.connect(masterGain);
-
-    // --- Envelope (piano: fast attack, quick decay, moderate sustain, long release) ---
-    const now = audioContext.currentTime;
-    const attackTime = 0.005;
-    const decayTime = 0.08;
-    const sustainLevel = 0.6;
-    const releaseTime = 0.5; // longer release
-    const totalDuration = duration + releaseTime;
-
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setValueAtTime(0, now);
-    masterGain.gain.linearRampToValueAtTime(0.5, now + attackTime); // fast attack
-    masterGain.gain.linearRampToValueAtTime(sustainLevel, now + attackTime + decayTime); // decay
-    masterGain.gain.linearRampToValueAtTime(sustainLevel, now + duration); // sustain
-    masterGain.gain.linearRampToValueAtTime(0, now + totalDuration); // release
-
-    // --- Set gain values for each oscillator ---
-    mainGain.gain.setValueAtTime(0.5, now);
-    harmonicGain1.gain.setValueAtTime(0.18, now);
-    harmonicGain2.gain.setValueAtTime(0.08, now);
-    harmonicGain3.gain.setValueAtTime(0.04, now);
-
-    // --- Connect to filter, compressor, reverb, and destination ---
-    masterGain.connect(lowpass);
-    lowpass.connect(compressor);
-    // Mix dry and wet (reverb) signals
-    const dryGain = audioContext.createGain();
-    dryGain.gain.value = 0.9;
-    const wetGain = audioContext.createGain();
-    wetGain.gain.value = 0.1;
-    compressor.connect(dryGain);
-    compressor.connect(reverbNode);
-    reverbNode.connect(wetGain);
-    dryGain.connect(audioContext.destination);
-    wetGain.connect(audioContext.destination);
-
-    // --- Start oscillators ---
-    mainOsc.start(now);
-    harmonicOsc1.start(now);
-    harmonicOsc2.start(now);
-    harmonicOsc3.start(now);
-    hammerOsc.start(now);
-
-    // --- Stop oscillators ---
-    mainOsc.stop(now + totalDuration);
-    harmonicOsc1.stop(now + totalDuration);
-    harmonicOsc2.stop(now + totalDuration);
-    harmonicOsc3.stop(now + totalDuration);
-    hammerOsc.stop(now + 0.03); // hammer is very short
-  };
-
-  // Function to play a piece
+  // Function to play a piece using Tone.js
   const playPiece = async (piece: Piece) => {
     if (playingPieceId !== null) {
       // Stop current playback
-      if (audioContextRef.current) {
-        await audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
+      Tone.Transport.stop();
       setPlayingPieceId(null);
       return;
     }
 
+    if (!isAudioReady || !samplerRef.current) {
+      alert('Audio is not ready yet. Please wait a moment and try again.');
+      return;
+    }
+
     setPlayingPieceId(piece.id);
-    
+
     // Calculate note duration based on playback speed
     const baseNoteDuration = 0.5; // 500ms for quarter note
     const noteDuration = baseNoteDuration / Math.abs(playbackSpeed);
     const pauseDuration = 0.1 / Math.abs(playbackSpeed);
     const measurePauseDuration = 0.5 / Math.abs(playbackSpeed);
-    
+
+    // Start Tone.js transport
+    await Tone.start();
+    Tone.Transport.bpm.value = 60 * playbackSpeed;
+
+    // Schedule all notes
+    let currentTime = 0;
     for (const note of piece.notes) {
       if (note === '|') {
-        // Pause between measures
-        await new Promise(resolve => setTimeout(resolve, measurePauseDuration * 1000));
+        currentTime += measurePauseDuration;
         continue;
       }
-      
-      const frequency = noteToFrequency(note);
-      if (frequency > 0) {
-        await playNote(frequency, noteDuration);
-        // Small pause between notes
-        await new Promise(resolve => setTimeout(resolve, pauseDuration * 1000));
+
+      const toneNote = noteToToneFormat(note);
+      if (toneNote) {
+        samplerRef.current.triggerAttackRelease(toneNote, noteDuration, currentTime);
+        currentTime += noteDuration + pauseDuration;
       }
     }
-    
-    setPlayingPieceId(null);
+
+    // Schedule the end of playback
+    Tone.Transport.schedule(() => {
+      setPlayingPieceId(null);
+    }, currentTime);
+
+    // Start playback
+    Tone.Transport.start();
   };
 
   return (
