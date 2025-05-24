@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 
 interface Piece {
@@ -18,7 +18,6 @@ interface Exercise {
 }
 
 function MusicNotation() {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [exercises, setExercises] = useState<Exercise[]>(() => {
     const saved = localStorage.getItem('exercises');
     return saved ? JSON.parse(saved) : [];
@@ -84,22 +83,25 @@ function MusicNotation() {
   }, [currentExercise]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = '';
-
-    const factory = new Factory({
-      renderer: {
-        elementId: containerRef.current.id,
-        width: 800,
-        height: 200 * currentExercise.pieces.length,
-      },
+    // Clear all notation containers
+    currentExercise.pieces.forEach(piece => {
+      const container = document.getElementById(`notation-${piece.id}`);
+      if (container) container.innerHTML = '';
     });
 
-    currentExercise.pieces.forEach((piece, pieceIndex) => {
-      if (piece.error) {
-        // Skip rendering if there's an error
-        return;
-      }
+    currentExercise.pieces.forEach((piece) => {
+      if (piece.error) return;
+
+      const container = document.getElementById(`notation-${piece.id}`);
+      if (!container) return;
+
+      const factory = new Factory({
+        renderer: {
+          elementId: container.id,
+          width: 800,
+          height: 200,
+        },
+      });
 
       // Split notes and lyrics into measures
       const measures: { notes: string[], lyrics: string[] }[] = [];
@@ -123,10 +125,10 @@ function MusicNotation() {
       // Create staves for each measure
       measures.forEach((measure, index) => {
         const x = 10 + index * 410; // 400 width + 10 padding
-        const y = 40 + pieceIndex * 200; // 200 height per piece
+        const y = 40; // Fixed y position since each piece has its own container
         const stave = factory.Stave({ x, y, width: 400 });
         
-        // Add clef only to first measure of each piece
+        // Add clef only to first measure
         if (index === 0) {
           stave.addClef('treble').addTimeSignature('4/4');
         }
@@ -136,7 +138,7 @@ function MusicNotation() {
         try {
           // Create the notes for this measure
           const staveNotes = measure.notes
-            .filter(note => note !== '|') // Remove bar lines first
+            .filter(note => note !== '|')
             .map((note) => {
               // Format the note for VexFlow
               const [noteName, octave] = note.split('/');
@@ -476,91 +478,98 @@ function MusicNotation() {
       </div>
 
       {currentExercise.pieces.map((piece) => (
-        <div key={piece.id} className="border rounded-lg overflow-hidden">
-          <div 
-            className="flex justify-between items-center p-4 bg-gray-50 cursor-pointer hover:bg-gray-100"
-            onClick={() => togglePieceExpansion(piece.id)}
-          >
-            <div className="flex items-center space-x-4">
-              <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
-              <div className="flex space-x-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopyPiece(piece.id);
-                  }}
-                  className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+        <div key={piece.id} className="mb-8">
+          <div className="border rounded-lg overflow-hidden">
+            <div 
+              className="flex justify-between items-center p-4 bg-gray-50 cursor-pointer hover:bg-gray-100"
+              onClick={() => togglePieceExpansion(piece.id)}
+            >
+              <div className="flex items-center space-x-4">
+                <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyPiece(piece.id);
+                    }}
+                    className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deletePiece(piece.id);
+                    }}
+                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center">
+                <span className="text-gray-500 mr-2">
+                  {expandedPieces.has(piece.id) ? 'Collapse' : 'Expand'}
+                </span>
+                <svg
+                  className={`w-5 h-5 transform transition-transform ${
+                    expandedPieces.has(piece.id) ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  Copy
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deletePiece(piece.id);
-                  }}
-                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                >
-                  Delete
-                </button>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
               </div>
             </div>
-            <div className="flex items-center">
-              <span className="text-gray-500 mr-2">
-                {expandedPieces.has(piece.id) ? 'Collapse' : 'Expand'}
-              </span>
-              <svg
-                className={`w-5 h-5 transform transition-transform ${
-                  expandedPieces.has(piece.id) ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </div>
-          </div>
 
-          {expandedPieces.has(piece.id) && (
-            <div className="p-4 space-y-4">
-              {piece.error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
-                  {piece.error}
-                </div>
-              )}
-              <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
-                  <input
-                    type="text"
-                    value={piece.noteInput}
-                    onChange={e => handleInputChange(piece.id, 'noteInput', e.target.value)}
-                    className={`border rounded px-2 py-1 w-96 ${piece.error ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
-                  <input
-                    type="text"
-                    value={piece.lyricsInput}
-                    onChange={e => handleInputChange(piece.id, 'lyricsInput', e.target.value)}
-                    className="border rounded px-2 py-1 w-96"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Update
-                </button>
-              </form>
-            </div>
-          )}
+            {expandedPieces.has(piece.id) && (
+              <div className="p-4 space-y-4">
+                {piece.error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
+                    {piece.error}
+                  </div>
+                )}
+                <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
+                    <input
+                      type="text"
+                      value={piece.noteInput}
+                      onChange={e => handleInputChange(piece.id, 'noteInput', e.target.value)}
+                      className={`border rounded px-2 py-1 w-96 ${piece.error ? 'border-red-500' : ''}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
+                    <input
+                      type="text"
+                      value={piece.lyricsInput}
+                      onChange={e => handleInputChange(piece.id, 'lyricsInput', e.target.value)}
+                      className="border rounded px-2 py-1 w-96"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Update
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+          {/* Music sheet always visible below the card */}
+          <div 
+            id={`notation-${piece.id}`} 
+            className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto mt-2"
+          />
         </div>
       ))}
 
@@ -570,8 +579,6 @@ function MusicNotation() {
       >
         Add Piece
       </button>
-
-      <div ref={containerRef} id="music-notation" className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto" />
 
       {/* Transpose Modal */}
       {showTransposeModal && (
