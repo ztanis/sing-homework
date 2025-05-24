@@ -468,7 +468,7 @@ function MusicNotation() {
     const baseNoteDuration = 0.5; // 500ms for quarter note
     const noteDuration = baseNoteDuration / Math.abs(playbackSpeed);
     const pauseDuration = 0.1 / Math.abs(playbackSpeed);
-    const measurePauseDuration = 0.5 / Math.abs(playbackSpeed);
+    //const measurePauseDuration = 0.5 / Math.abs(playbackSpeed);
 
     // Start Tone.js transport
     await Tone.start();
@@ -478,7 +478,7 @@ function MusicNotation() {
     let currentTime = 0;
     for (const note of piece.notes) {
       if (note === '|') {
-        currentTime += measurePauseDuration;
+        //currentTime += measurePauseDuration;
         continue;
       }
 
