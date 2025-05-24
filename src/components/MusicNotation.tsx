@@ -48,6 +48,7 @@ function MusicNotation() {
   const [showHelp, setShowHelp] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
@@ -468,18 +469,24 @@ function MusicNotation() {
 
     setPlayingPieceId(piece.id);
     
+    // Calculate note duration based on playback speed
+    const baseNoteDuration = 0.5; // 500ms for quarter note
+    const noteDuration = baseNoteDuration / Math.abs(playbackSpeed);
+    const pauseDuration = 0.1 / Math.abs(playbackSpeed);
+    const measurePauseDuration = 0.5 / Math.abs(playbackSpeed);
+    
     for (const note of piece.notes) {
       if (note === '|') {
         // Pause between measures
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, measurePauseDuration * 1000));
         continue;
       }
       
       const frequency = noteToFrequency(note);
       if (frequency > 0) {
-        await playNote(frequency);
+        await playNote(frequency, noteDuration);
         // Small pause between notes
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, pauseDuration * 1000));
       }
     }
     
@@ -584,6 +591,27 @@ function MusicNotation() {
         )}
       </div>
 
+      {/* Global Playback Speed Control */}
+      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center space-x-4">
+          <span className="text-lg font-semibold text-gray-800">Playback Speed:</span>
+          <select
+            value={playbackSpeed}
+            onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+            className="px-3 py-1 border rounded bg-white"
+          >
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1">1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="1.75">1.75x</option>
+            <option value="2">2x</option>
+          </select>
+        </div>
+      </div>
+
       {currentExercise.pieces.map((piece) => (
         <div key={piece.id} className="mb-8">
           <div className="border rounded-lg overflow-hidden">
@@ -593,7 +621,7 @@ function MusicNotation() {
             >
               <div className="flex items-center space-x-4">
                 <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 items-center">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
