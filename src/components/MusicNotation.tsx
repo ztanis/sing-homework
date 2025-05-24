@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Factory, Annotation, BarlineType } from 'vexflow';
+import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 
 interface Piece {
   id: number;
@@ -7,19 +7,81 @@ interface Piece {
   lyricsInput: string;
   notes: string[];
   lyrics: string[];
+  error?: string;
+}
+
+interface Exercise {
+  id: string;
+  name: string;
+  pieces: Piece[];
+  createdAt: number;
 }
 
 function MusicNotation() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pieces, setPieces] = useState<Piece[]>([
-    {
-      id: 1,
-      noteInput: 'c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5',
-      lyricsInput: 'Do Re Mi Fa | Sol La Ti Do',
-      notes: ['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5'],
-      lyrics: ['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']
+  const [exercises, setExercises] = useState<Exercise[]>(() => {
+    const saved = localStorage.getItem('exercises');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentExercise, setCurrentExercise] = useState<Exercise>(() => {
+    const saved = localStorage.getItem('currentExercise');
+    return saved ? JSON.parse(saved) : {
+      id: Date.now().toString(),
+      name: 'New Exercise',
+      pieces: [{
+        id: 1,
+        noteInput: 'c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5',
+        lyricsInput: 'Do Re Mi Fa | Sol La Ti Do',
+        notes: ['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5'],
+        lyrics: ['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']
+      }],
+      createdAt: Date.now()
+    };
+  });
+  const [showMenu, setShowMenu] = useState(false);
+  const [showTransposeModal, setShowTransposeModal] = useState(false);
+  const [selectedPieceId, setSelectedPieceId] = useState<number | null>(null);
+  const [transposeSemitones, setTransposeSemitones] = useState(0);
+  const [expandedPieces, setExpandedPieces] = useState<Set<number>>(() => {
+    const pieces = currentExercise.pieces;
+    return new Set(pieces.length > 0 ? [pieces[pieces.length - 1].id] : []);
+  });
+
+  const validateNote = (note: string): boolean => {
+    if (note === '|') return true;
+    const noteRegex = /^[a-g](b|#)?\/[3-5]$/;
+    return noteRegex.test(note);
+  };
+
+  const parseNotes = (input: string): { notes: string[], error?: string } => {
+    const noteList = input.trim().split(/\s+/);
+    
+    // Check for empty input
+    if (noteList.length === 0 || (noteList.length === 1 && noteList[0] === '')) {
+      return { notes: [], error: 'Please enter at least one note' };
     }
-  ]);
+
+    // Validate each note
+    for (let i = 0; i < noteList.length; i++) {
+      const note = noteList[i];
+      if (note !== '|' && !validateNote(note)) {
+        return { 
+          notes: [], 
+          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note/octave (e.g., c/4, c#/4, cb/4)` 
+        };
+      }
+    }
+
+    return { notes: noteList };
+  };
+
+  useEffect(() => {
+    localStorage.setItem('exercises', JSON.stringify(exercises));
+  }, [exercises]);
+
+  useEffect(() => {
+    localStorage.setItem('currentExercise', JSON.stringify(currentExercise));
+  }, [currentExercise]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -29,11 +91,16 @@ function MusicNotation() {
       renderer: {
         elementId: containerRef.current.id,
         width: 800,
-        height: 200 * pieces.length,
+        height: 200 * currentExercise.pieces.length,
       },
     });
 
-    pieces.forEach((piece, pieceIndex) => {
+    currentExercise.pieces.forEach((piece, pieceIndex) => {
+      if (piece.error) {
+        // Skip rendering if there's an error
+        return;
+      }
+
       // Split notes and lyrics into measures
       const measures: { notes: string[], lyrics: string[] }[] = [];
       let currentMeasure = { notes: [] as string[], lyrics: [] as string[] };
@@ -66,83 +133,316 @@ function MusicNotation() {
         
         stave.setContext(factory.getContext()).draw();
 
-        // Create the notes for this measure
-        const staveNotes = measure.notes.map((note) =>
-          factory.StaveNote({ keys: [note], duration: 'q' })
-        );
+        try {
+          // Create the notes for this measure
+          const staveNotes = measure.notes
+            .filter(note => note !== '|') // Remove bar lines first
+            .map((note) => {
+              // Format the note for VexFlow
+              const [noteName, octave] = note.split('/');
+              const baseNote = noteName.replace(/[#b]/, '');
+              const staveNote = factory.StaveNote({ 
+                keys: [`${baseNote}/${octave}`], 
+                duration: 'q' 
+              });
 
-        // Add lyrics as annotations
-        staveNotes.forEach((note, i) => {
-          if (measure.lyrics[i]) {
-            const annotation = factory.Annotation({ 
-              text: measure.lyrics[i], 
-              font: { family: 'Arial', size: 14, weight: '' }, 
-              vJustify: Annotation.VerticalJustify.BOTTOM 
+              // Add accidental if needed
+              if (noteName.includes('#')) {
+                staveNote.addModifier(new Accidental('#'), 0);
+              } else if (noteName.includes('b')) {
+                staveNote.addModifier(new Accidental('b'), 0);
+              }
+              
+              return staveNote;
             });
-            note.addModifier(annotation, 0);
+
+          // Add rests if needed to complete the measure (4/4 time)
+          while (staveNotes.length < 4) {
+            staveNotes.push(factory.StaveNote({ 
+              keys: ['b/4'], 
+              duration: 'q' 
+            }).setStyle({ fillStyle: 'transparent' }));
           }
-        });
 
-        const voice = factory.Voice({ time: '4/4' });
-        voice.addTickables(staveNotes);
-        factory.Formatter().joinVoices([voice]).format([voice], 400);
-        voice.draw(factory.getContext(), stave);
+          // Add lyrics as annotations
+          staveNotes.forEach((note, i) => {
+            if (measure.lyrics[i]) {
+              const annotation = factory.Annotation({ 
+                text: measure.lyrics[i], 
+                font: { family: 'Arial', size: 14, weight: '' }, 
+                vJustify: Annotation.VerticalJustify.BOTTOM 
+              });
+              note.addModifier(annotation, 0);
+            }
+          });
 
-        // Add barline at the end of each measure except the last one
-        if (index < measures.length - 1) {
-          stave.setEndBarType(BarlineType.SINGLE);
-          stave.draw();
+          const voice = factory.Voice({ time: '4/4' });
+          voice.addTickables(staveNotes);
+          factory.Formatter().joinVoices([voice]).format([voice], 400);
+          voice.draw(factory.getContext(), stave);
+
+          // Add barline at the end of each measure except the last one
+          if (index < measures.length - 1) {
+            stave.setEndBarType(BarlineType.SINGLE);
+            stave.draw();
+          }
+        } catch (error: any) {
+          console.error('Error rendering notes:', error);
+          // Display error message on the canvas
+          const context = factory.getContext();
+          context.setFont('Arial', 14);
+          context.fillText(`Error: ${error.message || 'Failed to render notes'}`, x, y + 50);
         }
       });
     });
-  }, [pieces]);
+  }, [currentExercise]);
 
   const handleSubmit = (pieceId: number) => (e: React.FormEvent) => {
     e.preventDefault();
-    const piece = pieces.find(p => p.id === pieceId);
+    const piece = currentExercise.pieces.find(p => p.id === pieceId);
     if (!piece) return;
 
-    const noteList = piece.noteInput.trim().split(/\s+/);
+    const { notes, error } = parseNotes(piece.noteInput);
     const lyricList = piece.lyricsInput.trim().split(/\s+/);
     
-    setPieces(pieces.map(p => 
-      p.id === pieceId 
-        ? { ...p, notes: noteList, lyrics: lyricList }
-        : p
-    ));
+    setCurrentExercise({
+      ...currentExercise,
+      pieces: currentExercise.pieces.map(p => 
+        p.id === pieceId 
+          ? { ...p, notes, lyrics: lyricList, error }
+          : p
+      )
+    });
   };
 
   const handleInputChange = (pieceId: number, field: 'noteInput' | 'lyricsInput', value: string) => {
-    setPieces(pieces.map(p => 
-      p.id === pieceId 
-        ? { ...p, [field]: value }
-        : p
-    ));
+    setCurrentExercise({
+      ...currentExercise,
+      pieces: currentExercise.pieces.map(p => 
+        p.id === pieceId 
+          ? { ...p, [field]: value, error: undefined }
+          : p
+      )
+    });
   };
 
   const addPiece = () => {
-    const newId = Math.max(...pieces.map(p => p.id)) + 1;
-    setPieces([...pieces, {
-      id: newId,
-      noteInput: '',
-      lyricsInput: '',
-      notes: [],
-      lyrics: []
-    }]);
+    const newId = Math.max(...currentExercise.pieces.map(p => p.id)) + 1;
+    setCurrentExercise({
+      ...currentExercise,
+      pieces: [...currentExercise.pieces, {
+        id: newId,
+        noteInput: '',
+        lyricsInput: '',
+        notes: [],
+        lyrics: []
+      }]
+    });
+    setExpandedPieces(new Set([newId]));
+  };
+
+  const saveExercise = () => {
+    const exerciseName = prompt('Enter exercise name:', currentExercise.name);
+    if (!exerciseName) return;
+
+    const updatedExercise = {
+      ...currentExercise,
+      name: exerciseName,
+      id: currentExercise.id || Date.now().toString(),
+      createdAt: currentExercise.createdAt || Date.now()
+    };
+
+    setExercises(prev => {
+      const filtered = prev.filter(e => e.id !== updatedExercise.id);
+      return [...filtered, updatedExercise].sort((a, b) => b.createdAt - a.createdAt);
+    });
+    setCurrentExercise(updatedExercise);
+  };
+
+  const loadExercise = (exercise: Exercise) => {
+    setCurrentExercise(exercise);
+    setShowMenu(false);
+  };
+
+  const deleteExercise = (id: string) => {
+    if (confirm('Are you sure you want to delete this exercise?')) {
+      setExercises(prev => prev.filter(e => e.id !== id));
+      if (currentExercise.id === id) {
+        setCurrentExercise({
+          id: Date.now().toString(),
+          name: 'New Exercise',
+          pieces: [{
+            id: 1,
+            noteInput: '',
+            lyricsInput: '',
+            notes: [],
+            lyrics: []
+          }],
+          createdAt: Date.now()
+        });
+      }
+    }
+  };
+
+  const createNewExercise = () => {
+    if (currentExercise.pieces.some(p => p.noteInput || p.lyricsInput)) {
+      if (!confirm('Are you sure you want to create a new exercise? Any unsaved changes will be lost.')) {
+        return;
+      }
+    }
+    setCurrentExercise({
+      id: Date.now().toString(),
+      name: 'New Exercise',
+      pieces: [{
+        id: 1,
+        noteInput: '',
+        lyricsInput: '',
+        notes: [],
+        lyrics: []
+      }],
+      createdAt: Date.now()
+    });
+  };
+
+  const transposeNote = (note: string, semitones: number): string => {
+    if (note === '|') return note;
+    
+    const noteMap = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+    const [noteName, octave] = note.split('/');
+    const baseNote = noteName.replace(/[#b]/, '');
+    const accidental = noteName.includes('#') ? '#' : noteName.includes('b') ? 'b' : '';
+    
+    let noteIndex = noteMap.indexOf(baseNote);
+    if (noteIndex === -1) return note;
+    
+    // Adjust for flats
+    if (accidental === 'b') {
+      noteIndex = (noteIndex - 1 + 12) % 12;
+    }
+    
+    // Apply transposition
+    noteIndex = (noteIndex + semitones + 12) % 12;
+    
+    // Calculate octave change
+    const octaveNum = parseInt(octave);
+    const octaveChange = Math.floor((noteMap.indexOf(baseNote) + semitones) / 12);
+    const newOctave = octaveNum + octaveChange;
+    
+    // Get the new note name
+    const newNoteName = noteMap[noteIndex];
+    
+    return `${newNoteName}/${newOctave}`;
+  };
+
+  const handleCopyPiece = (pieceId: number) => {
+    setSelectedPieceId(pieceId);
+    setTransposeSemitones(0);
+    setShowTransposeModal(true);
+  };
+
+  const confirmCopyPiece = () => {
+    if (selectedPieceId === null) return;
+    
+    const pieceToCopy = currentExercise.pieces.find(p => p.id === selectedPieceId);
+    if (!pieceToCopy) return;
+
+    const newId = Math.max(...currentExercise.pieces.map(p => p.id)) + 1;
+    const transposedNotes = pieceToCopy.notes.map(note => transposeNote(note, transposeSemitones));
+    const transposedNoteInput = transposedNotes.join(' ');
+
+    setCurrentExercise({
+      ...currentExercise,
+      pieces: [...currentExercise.pieces, {
+        ...pieceToCopy,
+        id: newId,
+        noteInput: transposedNoteInput,
+        notes: transposedNotes
+      }]
+    });
+
+    setShowTransposeModal(false);
+    setSelectedPieceId(null);
+  };
+
+  const togglePieceExpansion = (pieceId: number) => {
+    setExpandedPieces(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(pieceId)) {
+        newSet.delete(pieceId);
+      } else {
+        newSet.add(pieceId);
+      }
+      return newSet;
+    });
   };
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
+        <div className="space-x-4">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+          >
+            {showMenu ? 'Hide Menu' : 'Show Menu'}
+          </button>
+          <button
+            onClick={createNewExercise}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            New Exercise
+          </button>
+          <button
+            onClick={saveExercise}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Save Exercise
+          </button>
+        </div>
+      </div>
+
+      {showMenu && (
+        <div className="bg-white p-4 rounded-lg shadow-lg border">
+          <h3 className="text-lg font-semibold mb-4">Saved Exercises</h3>
+          <div className="space-y-2">
+            {exercises.map(exercise => (
+              <div key={exercise.id} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded">
+                <button
+                  onClick={() => loadExercise(exercise)}
+                  className="flex-1 text-left"
+                >
+                  {exercise.name}
+                </button>
+                <button
+                  onClick={() => deleteExercise(exercise.id)}
+                  className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
         <h3 className="text-lg font-semibold text-blue-800 mb-2">How to Write Notation</h3>
         <div className="space-y-2 text-blue-700">
           <p><strong>Notes Format:</strong> Use note name and octave (e.g., c/4, d/4, e/4, f/4)</p>
           <ul className="list-disc pl-5 space-y-1">
             <li>Note names: a, b, c, d, e, f, g</li>
+            <li>Accidentals: use # for sharp (e.g., c#/4) or b for flat (e.g., cb/4)</li>
             <li>Octave numbers: 3 (low) to 5 (high)</li>
             <li>Separate notes with spaces</li>
             <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
-            <li>Example: <code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code></li>
+            <li>Examples: 
+              <ul className="list-disc pl-5 mt-1">
+                <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4</code> - basic notes</li>
+                <li><code className="bg-blue-100 px-1 rounded">c#/4 db/4 e/4 f#/4</code> - with accidentals</li>
+                <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code> - with bar line</li>
+              </ul>
+            </li>
           </ul>
           <p><strong>Lyrics Format:</strong> One word per note, separated by spaces</p>
           <ul className="list-disc pl-5 space-y-1">
@@ -153,35 +453,81 @@ function MusicNotation() {
         </div>
       </div>
 
-      {pieces.map((piece) => (
-        <div key={piece.id} className="space-y-4 border-b pb-8">
-          <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
-          <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
-            <div>
-              <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
-              <input
-                type="text"
-                value={piece.noteInput}
-                onChange={e => handleInputChange(piece.id, 'noteInput', e.target.value)}
-                className="border rounded px-2 py-1 w-96"
-              />
+      {currentExercise.pieces.map((piece) => (
+        <div key={piece.id} className="border rounded-lg overflow-hidden">
+          <div 
+            className="flex justify-between items-center p-4 bg-gray-50 cursor-pointer hover:bg-gray-100"
+            onClick={() => togglePieceExpansion(piece.id)}
+          >
+            <div className="flex items-center space-x-4">
+              <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyPiece(piece.id);
+                }}
+                className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                Copy
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
-              <input
-                type="text"
-                value={piece.lyricsInput}
-                onChange={e => handleInputChange(piece.id, 'lyricsInput', e.target.value)}
-                className="border rounded px-2 py-1 w-96"
-              />
+            <div className="flex items-center">
+              <span className="text-gray-500 mr-2">
+                {expandedPieces.has(piece.id) ? 'Collapse' : 'Expand'}
+              </span>
+              <svg
+                className={`w-5 h-5 transform transition-transform ${
+                  expandedPieces.has(piece.id) ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </div>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Update
-            </button>
-          </form>
+          </div>
+
+          {expandedPieces.has(piece.id) && (
+            <div className="p-4 space-y-4">
+              {piece.error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">
+                  {piece.error}
+                </div>
+              )}
+              <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
+                  <input
+                    type="text"
+                    value={piece.noteInput}
+                    onChange={e => handleInputChange(piece.id, 'noteInput', e.target.value)}
+                    className={`border rounded px-2 py-1 w-96 ${piece.error ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
+                  <input
+                    type="text"
+                    value={piece.lyricsInput}
+                    onChange={e => handleInputChange(piece.id, 'lyricsInput', e.target.value)}
+                    className="border rounded px-2 py-1 w-96"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Update
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       ))}
 
@@ -193,6 +539,44 @@ function MusicNotation() {
       </button>
 
       <div ref={containerRef} id="music-notation" className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto" />
+
+      {/* Transpose Modal */}
+      {showTransposeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Transpose Piece</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Number of semitones to transpose (-12 to +12):
+                </label>
+                <input
+                  type="number"
+                  min="-12"
+                  max="12"
+                  value={transposeSemitones}
+                  onChange={(e) => setTransposeSemitones(parseInt(e.target.value) || 0)}
+                  className="border rounded px-2 py-1 w-full"
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => setShowTransposeModal(false)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmCopyPiece}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
