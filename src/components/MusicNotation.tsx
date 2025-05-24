@@ -49,6 +49,7 @@ function MusicNotation() {
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const reverbNodeRef = useRef<ConvolverNode | null>(null);
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
@@ -430,29 +431,143 @@ function MusicNotation() {
     return 440 * Math.pow(2, (noteNumber + (octaveNumber - 4) * 12) / 12);
   };
 
-  // Function to play a note
+  // Function to create reverb impulse response
+  const createReverb = async (audioContext: AudioContext) => {
+    const sampleRate = audioContext.sampleRate;
+    const length = sampleRate * 2; // 2 seconds of reverb
+    const impulse = audioContext.createBuffer(2, length, sampleRate);
+    
+    for (let channel = 0; channel < 2; channel++) {
+      const channelData = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+      }
+    }
+    
+    const convolver = audioContext.createConvolver();
+    convolver.buffer = impulse;
+    return convolver;
+  };
+
+  // Function to play a note with improved grand piano sound
   const playNote = async (frequency: number, duration: number = 0.5) => {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext();
+      reverbNodeRef.current = await createReverb(audioContextRef.current);
     }
     
     const audioContext = audioContextRef.current;
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    
-    // Add some attack and release to make it sound more like a piano
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
-    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + duration);
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + duration);
+    const reverbNode = reverbNodeRef.current!;
+
+    // --- Hammer transient (percussive click) ---
+    const hammerOsc = audioContext.createOscillator();
+    hammerOsc.type = 'triangle';
+    hammerOsc.frequency.setValueAtTime(frequency * 8, audioContext.currentTime);
+    const hammerGain = audioContext.createGain();
+    hammerGain.gain.setValueAtTime(0.25, audioContext.currentTime);
+    hammerGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.025); // very short
+    hammerOsc.connect(hammerGain);
+
+    // --- Main oscillators (fundamental + harmonics, some detuned) ---
+    const mainOsc = audioContext.createOscillator();
+    mainOsc.type = 'sine';
+    mainOsc.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+    const harmonicOsc1 = audioContext.createOscillator();
+    harmonicOsc1.type = 'triangle';
+    harmonicOsc1.frequency.setValueAtTime(frequency * 2, audioContext.currentTime);
+
+    const harmonicOsc2 = audioContext.createOscillator();
+    harmonicOsc2.type = 'sine';
+    harmonicOsc2.frequency.setValueAtTime(frequency * 3.01, audioContext.currentTime); // slight detune
+
+    const harmonicOsc3 = audioContext.createOscillator();
+    harmonicOsc3.type = 'triangle';
+    harmonicOsc3.frequency.setValueAtTime(frequency * 4.02, audioContext.currentTime); // slight detune
+
+    // --- Gain nodes for each oscillator ---
+    const mainGain = audioContext.createGain();
+    const harmonicGain1 = audioContext.createGain();
+    const harmonicGain2 = audioContext.createGain();
+    const harmonicGain3 = audioContext.createGain();
+
+    // --- Master gain for envelope ---
+    const masterGain = audioContext.createGain();
+    masterGain.gain.setValueAtTime(0, audioContext.currentTime);
+
+    // --- Lowpass filter for mellow decay ---
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(8000, audioContext.currentTime);
+    lowpass.Q.value = 1;
+
+    // --- Compressor for dynamics ---
+    const compressor = audioContext.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-50, audioContext.currentTime);
+    compressor.knee.setValueAtTime(40, audioContext.currentTime);
+    compressor.ratio.setValueAtTime(12, audioContext.currentTime);
+    compressor.attack.setValueAtTime(0, audioContext.currentTime);
+    compressor.release.setValueAtTime(0.25, audioContext.currentTime);
+
+    // --- Connect oscillators to gains ---
+    mainOsc.connect(mainGain);
+    harmonicOsc1.connect(harmonicGain1);
+    harmonicOsc2.connect(harmonicGain2);
+    harmonicOsc3.connect(harmonicGain3);
+    hammerGain.connect(masterGain);
+    mainGain.connect(masterGain);
+    harmonicGain1.connect(masterGain);
+    harmonicGain2.connect(masterGain);
+    harmonicGain3.connect(masterGain);
+
+    // --- Envelope (piano: fast attack, quick decay, moderate sustain, long release) ---
+    const now = audioContext.currentTime;
+    const attackTime = 0.005;
+    const decayTime = 0.08;
+    const sustainLevel = 0.6;
+    const releaseTime = 0.5; // longer release
+    const totalDuration = duration + releaseTime;
+
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(0.5, now + attackTime); // fast attack
+    masterGain.gain.linearRampToValueAtTime(sustainLevel, now + attackTime + decayTime); // decay
+    masterGain.gain.linearRampToValueAtTime(sustainLevel, now + duration); // sustain
+    masterGain.gain.linearRampToValueAtTime(0, now + totalDuration); // release
+
+    // --- Set gain values for each oscillator ---
+    mainGain.gain.setValueAtTime(0.5, now);
+    harmonicGain1.gain.setValueAtTime(0.18, now);
+    harmonicGain2.gain.setValueAtTime(0.08, now);
+    harmonicGain3.gain.setValueAtTime(0.04, now);
+
+    // --- Connect to filter, compressor, reverb, and destination ---
+    masterGain.connect(lowpass);
+    lowpass.connect(compressor);
+    // Mix dry and wet (reverb) signals
+    const dryGain = audioContext.createGain();
+    dryGain.gain.value = 0.9;
+    const wetGain = audioContext.createGain();
+    wetGain.gain.value = 0.1;
+    compressor.connect(dryGain);
+    compressor.connect(reverbNode);
+    reverbNode.connect(wetGain);
+    dryGain.connect(audioContext.destination);
+    wetGain.connect(audioContext.destination);
+
+    // --- Start oscillators ---
+    mainOsc.start(now);
+    harmonicOsc1.start(now);
+    harmonicOsc2.start(now);
+    harmonicOsc3.start(now);
+    hammerOsc.start(now);
+
+    // --- Stop oscillators ---
+    mainOsc.stop(now + totalDuration);
+    harmonicOsc1.stop(now + totalDuration);
+    harmonicOsc2.stop(now + totalDuration);
+    harmonicOsc3.stop(now + totalDuration);
+    hammerOsc.stop(now + 0.03); // hammer is very short
   };
 
   // Function to play a piece
