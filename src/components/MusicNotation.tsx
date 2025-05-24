@@ -376,6 +376,28 @@ function MusicNotation() {
     });
   };
 
+  const deletePiece = (pieceId: number) => {
+    if (confirm('Are you sure you want to delete this piece?')) {
+      setCurrentExercise({
+        ...currentExercise,
+        pieces: currentExercise.pieces.filter(p => p.id !== pieceId)
+      });
+      // Update expanded pieces state
+      setExpandedPieces(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(pieceId);
+        // If we deleted the last piece, expand the new last piece
+        if (currentExercise.pieces.length > 1) {
+          const remainingPieces = currentExercise.pieces.filter(p => p.id !== pieceId);
+          if (remainingPieces.length > 0) {
+            newSet.add(remainingPieces[remainingPieces.length - 1].id);
+          }
+        }
+        return newSet;
+      });
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -461,15 +483,26 @@ function MusicNotation() {
           >
             <div className="flex items-center space-x-4">
               <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyPiece(piece.id);
-                }}
-                className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
-              >
-                Copy
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCopyPiece(piece.id);
+                  }}
+                  className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+                >
+                  Copy
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deletePiece(piece.id);
+                  }}
+                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
             <div className="flex items-center">
               <span className="text-gray-500 mr-2">
