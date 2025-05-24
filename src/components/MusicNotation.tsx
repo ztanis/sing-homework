@@ -450,51 +450,63 @@ function MusicNotation() {
 
   // Function to play a piece using Tone.js
   const playPiece = async (piece: Piece) => {
+    console.log('playPiece called for piece id:', piece.id);
     if (playingPieceId !== null) {
-      // Stop current playback
+      console.log('Stopping current playback');
       Tone.Transport.stop();
+      Tone.Transport.cancel();
+      Tone.Transport.position = 0;
       setPlayingPieceId(null);
       return;
     }
 
     if (!isAudioReady || !samplerRef.current) {
+      console.log('Audio not ready:', { isAudioReady, sampler: samplerRef.current });
       alert('Audio is not ready yet. Please wait a moment and try again.');
       return;
     }
 
     setPlayingPieceId(piece.id);
+    console.log('Starting playback for piece id:', piece.id);
 
     // Calculate note duration based on playback speed
     const baseNoteDuration = 0.5; // 500ms for quarter note
     const noteDuration = baseNoteDuration / Math.abs(playbackSpeed);
     const pauseDuration = 0.1 / Math.abs(playbackSpeed);
-    //const measurePauseDuration = 0.5 / Math.abs(playbackSpeed);
 
-    // Start Tone.js transport
+    // Reset and start Tone.js transport
     await Tone.start();
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    Tone.Transport.position = 0;
     Tone.Transport.bpm.value = 60 * playbackSpeed;
 
     // Schedule all notes
     let currentTime = 0;
     for (const note of piece.notes) {
       if (note === '|') {
-        //currentTime += measurePauseDuration;
         continue;
       }
-
       const toneNote = noteToToneFormat(note);
       if (toneNote) {
-        samplerRef.current.triggerAttackRelease(toneNote, noteDuration, currentTime);
+        console.log('Scheduling note', toneNote, 'at', currentTime);
+        Tone.Transport.schedule((time) => {
+          samplerRef.current!.triggerAttackRelease(toneNote, noteDuration, time);
+        }, currentTime);
+
+        //samplerRef.current.triggerAttackRelease(toneNote, noteDuration, currentTime);
         currentTime += noteDuration + pauseDuration;
       }
     }
 
     // Schedule the end of playback
     Tone.Transport.schedule(() => {
+      console.log('Playback ended for piece id:', piece.id);
       setPlayingPieceId(null);
     }, currentTime);
 
     // Start playback
+    console.log('Transport start');
     Tone.Transport.start();
   };
 
