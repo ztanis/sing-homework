@@ -40,6 +40,8 @@ function MusicNotation() {
   });
   const [showMenu, setShowMenu] = useState(false);
   const [showTransposeModal, setShowTransposeModal] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [exerciseName, setExerciseName] = useState('');
   const [selectedPieceId, setSelectedPieceId] = useState<number | null>(null);
   const [transposeSemitones, setTransposeSemitones] = useState(0);
   const [expandedPieces, setExpandedPieces] = useState<Set<number>>(() => {
@@ -51,11 +53,15 @@ function MusicNotation() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [autoPlayNext, setAutoPlayNext] = useState(false);
+  const [playOneOctaveLower, setPlayOneOctaveLower] = useState(false);
   const samplerRef = useRef<Tone.Sampler | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [exerciseToDelete, setExerciseToDelete] = useState<string | null>(null);
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
-    const noteRegex = /^[a-g](b|#)?\/[3-5]$/;
+    // Allow 'b' as a note name, but not as a flat modifier
+    const noteRegex = /^[a-g](b(?![a-g])|#)?\/[3-5]$/;
     return noteRegex.test(note);
   };
 
@@ -149,17 +155,20 @@ function MusicNotation() {
             .map((note) => {
               // Format the note for VexFlow
               const [noteName, octave] = note.split('/');
-              const baseNote = noteName.replace(/[#b]/, '');
+              // Handle 'b' as a note name, not as a flat
+              const baseNote = noteName.replace(/#|b(?![a-g])/, '');
+              const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && !noteName.match(/b(?![a-g])/)) ? 'b' : '';
+              
+              // For VexFlow, we need to use 'b/4' format for the note B
+              const vexNote = baseNote === 'b' ? 'b' : baseNote;
               const staveNote = factory.StaveNote({ 
-                keys: [`${baseNote}/${octave}`], 
+                keys: [`${vexNote}/${octave}`], 
                 duration: 'q' 
               });
 
               // Add accidental if needed
-              if (noteName.includes('#')) {
-                staveNote.addModifier(new Accidental('#'), 0);
-              } else if (noteName.includes('b')) {
-                staveNote.addModifier(new Accidental('b'), 0);
+              if (accidental) {
+                staveNote.addModifier(new Accidental(accidental), 0);
               }
               
               return staveNote;
@@ -282,12 +291,16 @@ function MusicNotation() {
   };
 
   const saveExercise = () => {
-    const exerciseName = prompt('Enter exercise name:', currentExercise.name);
-    if (!exerciseName) return;
+    setExerciseName(currentExercise.name);
+    setShowSaveModal(true);
+  };
+
+  const confirmSaveExercise = () => {
+    if (!exerciseName.trim()) return;
 
     const updatedExercise = {
       ...currentExercise,
-      name: exerciseName,
+      name: exerciseName.trim(),
       id: currentExercise.id || Date.now().toString(),
       createdAt: currentExercise.createdAt || Date.now()
     };
@@ -297,6 +310,7 @@ function MusicNotation() {
       return [...filtered, updatedExercise].sort((a, b) => b.createdAt - a.createdAt);
     });
     setCurrentExercise(updatedExercise);
+    setShowSaveModal(false);
   };
 
   const loadExercise = (exercise: Exercise) => {
@@ -305,9 +319,14 @@ function MusicNotation() {
   };
 
   const deleteExercise = (id: string) => {
-    if (confirm('Are you sure you want to delete this exercise?')) {
-      setExercises(prev => prev.filter(e => e.id !== id));
-      if (currentExercise.id === id) {
+    setExerciseToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteExercise = () => {
+    if (exerciseToDelete) {
+      setExercises(prev => prev.filter(e => e.id !== exerciseToDelete));
+      if (currentExercise.id === exerciseToDelete) {
         setCurrentExercise({
           id: Date.now().toString(),
           name: 'New Exercise',
@@ -321,6 +340,8 @@ function MusicNotation() {
           createdAt: Date.now()
         });
       }
+      setShowDeleteModal(false);
+      setExerciseToDelete(null);
     }
   };
 
@@ -349,23 +370,17 @@ function MusicNotation() {
     
     const noteMap = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
     const [noteName, octave] = note.split('/');
-    const baseNote = noteName.replace(/[#b]/, '');
-    const accidental = noteName.includes('#') ? '#' : noteName.includes('b') ? 'b' : '';
     
-    let noteIndex = noteMap.indexOf(baseNote);
+    // Find the index in the noteMap, including accidentals
+    let noteIndex = noteMap.indexOf(noteName.toLowerCase());
     if (noteIndex === -1) return note;
-    
-    // Adjust for flats
-    if (accidental === 'b') {
-      noteIndex = (noteIndex - 1 + 12) % 12;
-    }
     
     // Apply transposition
     noteIndex = (noteIndex + semitones + 12) % 12;
     
     // Calculate octave change
     const octaveNum = parseInt(octave);
-    const octaveChange = Math.floor((noteMap.indexOf(baseNote) + semitones) / 12);
+    const octaveChange = Math.floor((noteMap.indexOf(noteName.toLowerCase()) + semitones) / 12);
     const newOctave = octaveNum + octaveChange;
     
     // Get the new note name
@@ -417,25 +432,23 @@ function MusicNotation() {
   };
 
   const deletePiece = (pieceId: number) => {
-    if (confirm('Are you sure you want to delete this piece?')) {
-      setCurrentExercise({
-        ...currentExercise,
-        pieces: currentExercise.pieces.filter(p => p.id !== pieceId)
-      });
-      // Update expanded pieces state
-      setExpandedPieces(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(pieceId);
-        // If we deleted the last piece, expand the new last piece
-        if (currentExercise.pieces.length > 1) {
-          const remainingPieces = currentExercise.pieces.filter(p => p.id !== pieceId);
-          if (remainingPieces.length > 0) {
-            newSet.add(remainingPieces[remainingPieces.length - 1].id);
-          }
+    setCurrentExercise({
+      ...currentExercise,
+      pieces: currentExercise.pieces.filter(p => p.id !== pieceId)
+    });
+    // Update expanded pieces state
+    setExpandedPieces(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(pieceId);
+      // If we deleted the last piece, expand the new last piece
+      if (currentExercise.pieces.length > 1) {
+        const remainingPieces = currentExercise.pieces.filter(p => p.id !== pieceId);
+        if (remainingPieces.length > 0) {
+          newSet.add(remainingPieces[remainingPieces.length - 1].id);
         }
-        return newSet;
-      });
-    }
+      }
+      return newSet;
+    });
   };
 
   // Function to convert note to Tone.js format
@@ -443,10 +456,14 @@ function MusicNotation() {
     if (note === '|') return '';
     
     const [noteName, octave] = note.split('/');
-    const baseNote = noteName.replace(/[#b]/, '');
-    const accidental = noteName.includes('#') ? '#' : noteName.includes('b') ? 'b' : '';
+    // Handle 'b' as a note name, not as a flat
+    const baseNote = noteName.replace(/#|b(?![a-g])/, '');
+    const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && !noteName.match(/b(?![a-g])/)) ? 'b' : '';
     
-    return `${baseNote.toUpperCase()}${accidental}${octave}`;
+    // Adjust octave if playOneOctaveLower is true
+    const adjustedOctave = playOneOctaveLower ? parseInt(octave) - 1 : parseInt(octave);
+    
+    return `${baseNote.toUpperCase()}${accidental}${adjustedOctave}`;
   };
 
   // Function to play a piece using Tone.js
@@ -645,6 +662,17 @@ function MusicNotation() {
               {autoPlayNext ? 'On' : 'Off'}
             </button>
           </div>
+          <div className="flex items-center space-x-2 ml-4">
+            <span className="text-lg font-semibold text-gray-800">Play one octave lower:</span>
+            <button
+              onClick={() => setPlayOneOctaveLower(!playOneOctaveLower)}
+              className={`px-3 py-1 rounded ${
+                playOneOctaveLower ? 'bg-green-600' : 'bg-gray-600'
+              } text-white hover:opacity-90`}
+            >
+              {playOneOctaveLower ? 'On' : 'Off'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -797,6 +825,67 @@ function MusicNotation() {
                   Copy
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Exercise Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Save Exercise</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Exercise Name:
+                </label>
+                <input
+                  type="text"
+                  value={exerciseName}
+                  onChange={(e) => setExerciseName(e.target.value)}
+                  className="border rounded px-2 py-1 w-full"
+                  placeholder="Enter exercise name"
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmSaveExercise}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Exercise Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Delete Exercise</h3>
+            <p className="mb-4">Are you sure you want to delete this exercise?</p>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteExercise}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
