@@ -61,7 +61,7 @@ function MusicNotation() {
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
     // Allow 'b' as a note name, but not as a flat modifier
-    const noteRegex = /^[a-g](b(?![a-g])|#)?\/[3-5]$/;
+    const noteRegex = /^[a-g](b(?![a-g])|#)?(\/[3-5])?$/;
     return noteRegex.test(note);
   };
 
@@ -73,18 +73,28 @@ function MusicNotation() {
       return { notes: [], error: 'Please enter at least one note' };
     }
 
+    // Validate each note and add default octave if needed
+    const processedNotes = noteList.map(note => {
+      if (note === '|') return note;
+      if (!validateNote(note)) {
+        return note; // Return invalid note as is, it will be caught by validation
+      }
+      // Add default octave 4 if not specified
+      return note.includes('/') ? note : `${note}/4`;
+    });
+
     // Validate each note
-    for (let i = 0; i < noteList.length; i++) {
-      const note = noteList[i];
+    for (let i = 0; i < processedNotes.length; i++) {
+      const note = processedNotes[i];
       if (note !== '|' && !validateNote(note)) {
         return { 
           notes: [], 
-          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note/octave (e.g., c/4, c#/4, cb/4)` 
+          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note/octave (e.g., c/4, c#/4, cb/4) or just note (e.g., c, c#, cb)` 
         };
       }
     }
 
-    return { notes: noteList };
+    return { notes: processedNotes };
   };
 
   useEffect(() => {
@@ -112,7 +122,7 @@ function MusicNotation() {
         renderer: {
           elementId: container.id,
           width: 800,
-          height: 200,
+          height: 200, // Initial height, will be adjusted
         },
       });
 
@@ -135,10 +145,20 @@ function MusicNotation() {
         measures.push(currentMeasure);
       }
 
+      // Calculate required height and adjust container and canvas
+      const measuresPerRow = 2;
+      const rows = Math.ceil(measures.length / measuresPerRow);
+      const totalHeight = rows * 220; // 200 height + 20 padding per row
+      container.style.height = `${totalHeight}px`;
+      factory.getContext().resize(800, totalHeight);
+
       // Create staves for each measure
       measures.forEach((measure, index) => {
-        const x = 10 + index * 410; // 400 width + 10 padding
-        const y = 40; // Fixed y position since each piece has its own container
+        // Calculate x and y positions based on measure index
+        const row = Math.floor(index / measuresPerRow);
+        const col = index % measuresPerRow;
+        const x = 10 + col * 410; // 400 width + 10 padding
+        const y = 40 + row * 220; // 200 height + 20 padding between rows
         const stave = factory.Stave({ x, y, width: 400 });
         
         // Add clef only to first measure
@@ -155,12 +175,14 @@ function MusicNotation() {
             .map((note) => {
               // Format the note for VexFlow
               const [noteName, octave] = note.split('/');
-              // Handle 'b' as a note name, not as a flat
-              const baseNote = noteName.replace(/#|b(?![a-g])/, '');
-              const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && !noteName.match(/b(?![a-g])/)) ? 'b' : '';
+              console.log(noteName);
+              // Extract base note, handling 'b' correctly
+              const baseNote = noteName.replace(/(?<!^)b|#/, '');
+              const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && noteName !== 'b') ? 'b' : '';
               
               // For VexFlow, we need to use 'b/4' format for the note B
-              const vexNote = baseNote === 'b' ? 'b' : baseNote;
+              const vexNote = baseNote;
+              
               const staveNote = factory.StaveNote({ 
                 keys: [`${vexNote}/${octave}`], 
                 duration: 'q' 
