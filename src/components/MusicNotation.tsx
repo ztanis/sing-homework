@@ -61,7 +61,7 @@ function MusicNotation() {
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
     // Allow 'b' as a note name, but not as a flat modifier
-    const noteRegex = /^[a-g](b(?![a-g])|#)?(\/[3-5])?$/;
+    const noteRegex = /^[a-g](b(?![a-g])|#)?[3-5]?$/;
     return noteRegex.test(note);
   };
 
@@ -80,7 +80,7 @@ function MusicNotation() {
         return note; // Return invalid note as is, it will be caught by validation
       }
       // Add default octave 4 if not specified
-      return note.includes('/') ? note : `${note}/4`;
+      return note.match(/[3-5]$/) ? note : `${note}4`;
     });
 
     // Validate each note
@@ -89,7 +89,7 @@ function MusicNotation() {
       if (note !== '|' && !validateNote(note)) {
         return { 
           notes: [], 
-          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note/octave (e.g., c/4, c#/4, cb/4) or just note (e.g., c, c#, cb)` 
+          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note[octave] (e.g., c4, c#5, cb3) or just note (e.g., c, c#, cb)` 
         };
       }
     }
@@ -173,22 +173,16 @@ function MusicNotation() {
           const staveNotes = measure.notes
             .filter(note => note !== '|')
             .map((note) => {
-              // Format the note for VexFlow
-              const [noteName, octave] = note.split('/');
-              console.log(noteName);
-              // Extract base note, handling 'b' correctly
-              const baseNote = noteName.replace(/(?<!^)b|#/, '');
-              const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && noteName !== 'b') ? 'b' : '';
-              
-              // For VexFlow, we need to use 'b/4' format for the note B
-              const vexNote = baseNote;
-              
+              console.log(note);
+              const { note: vexNote, octave } = noteToVexFlowFormat(note);
+              console.log(vexNote, octave);
               const staveNote = factory.StaveNote({ 
                 keys: [`${vexNote}/${octave}`], 
                 duration: 'q' 
               });
 
               // Add accidental if needed
+              const accidental = note.includes('#') ? '#' : (note.includes('b') && note !== 'b') ? 'b' : '';
               if (accidental) {
                 staveNote.addModifier(new Accidental(accidental), 0);
               }
@@ -391,8 +385,11 @@ function MusicNotation() {
     if (note === '|') return note;
     
     const noteMap = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
-    const [noteName, octave] = note.split('/');
+    // Extract note name and octave
+    const match = note.match(/^([a-g](?:b(?![a-g])|#)?)([3-5])?$/);
+    if (!match) return note;
     
+    const [, noteName, octave] = match;
     // Find the index in the noteMap, including accidentals
     let noteIndex = noteMap.indexOf(noteName.toLowerCase());
     if (noteIndex === -1) return note;
@@ -401,14 +398,14 @@ function MusicNotation() {
     noteIndex = (noteIndex + semitones + 12) % 12;
     
     // Calculate octave change
-    const octaveNum = parseInt(octave);
+    const octaveNum = parseInt(octave || '4');
     const octaveChange = Math.floor((noteMap.indexOf(noteName.toLowerCase()) + semitones) / 12);
     const newOctave = octaveNum + octaveChange;
     
     // Get the new note name
     const newNoteName = noteMap[noteIndex];
     
-    return `${newNoteName}/${newOctave}`;
+    return `${newNoteName}${newOctave}`;
   };
 
   const handleCopyPiece = (pieceId: number) => {
@@ -477,15 +474,38 @@ function MusicNotation() {
   const noteToToneFormat = (note: string): string => {
     if (note === '|') return '';
     
-    const [noteName, octave] = note.split('/');
+    // Extract note name and octave
+    const match = note.match(/^([a-g](?:b(?![a-g])|#)?)([3-5])?$/);
+    if (!match) return '';
+    
+    const [, noteName, octave] = match;
     // Handle 'b' as a note name, not as a flat
-    const baseNote = noteName.replace(/#|b(?![a-g])/, '');
-    const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && !noteName.match(/b(?![a-g])/)) ? 'b' : '';
+    const baseNote = noteName.replace(/(?<!^)b|#/, '');
+    const accidental = noteName.includes('#') ? '#' : (noteName.includes('b') && noteName !== 'b') ? 'b' : '';
     
     // Adjust octave if playOneOctaveLower is true
-    const adjustedOctave = playOneOctaveLower ? parseInt(octave) - 1 : parseInt(octave);
+    const octaveNum = parseInt(octave || '4');
+    const adjustedOctave = playOneOctaveLower ? octaveNum - 1 : octaveNum;
     
     return `${baseNote.toUpperCase()}${accidental}${adjustedOctave}`;
+  };
+
+  // Function to convert note to VexFlow format
+  const noteToVexFlowFormat = (note: string): { note: string, octave: string } => {
+    if (note === '|') return { note: '', octave: '' };
+    
+    // Extract note name and octave
+    const match = note.match(/^([a-g](?:b(?![a-g])|#)?)([3-5])?$/);
+    if (!match) return { note: '', octave: '' };
+    
+    const [, noteName, octave] = match;
+    // Handle 'b' as a note name, not as a flat
+    const baseNote = noteName.replace(/(?<!^)b|#/, '');
+    
+    return {
+      note: baseNote,
+      octave: octave || '4'
+    };
   };
 
   // Function to play a piece using Tone.js
