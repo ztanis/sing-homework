@@ -30,7 +30,7 @@ function MusicNotation() {
       name: 'New Exercise',
       pieces: [{
         id: 1,
-        noteInput: 'c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5',
+        noteInput: 'c d e f | g a b c5',
         lyricsInput: 'Do Re Mi Fa | Sol La Ti Do',
         notes: ['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5'],
         lyrics: ['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']
@@ -66,48 +66,34 @@ function MusicNotation() {
   };
 
   const parseNotes = (input: string): { notes: string[], error?: string } => {
-    console.log('DEBUG: parseNotes called with input:', JSON.stringify(input));
     const noteList = input.trim().split(/\s+/);
-    console.log('DEBUG: noteList after split:', noteList);
     
     // Check for empty input
     if (noteList.length === 0 || (noteList.length === 1 && noteList[0] === '')) {
-      console.log('DEBUG: Empty input detected');
       return { notes: [], error: 'Please enter at least one note' };
     }
 
     // Validate each note and add default octave if needed
     const processedNotes = noteList.map(note => {
       if (note === '|') return note;
-      const isValidBefore = validateNote(note);
-      console.log('DEBUG: Note before processing:', note, 'valid:', isValidBefore);
-      if (!isValidBefore) {
+      if (!validateNote(note)) {
         return note; // Return invalid note as is, it will be caught by validation
       }
       // Add default octave 4 if not specified
-      const processed = note.match(/[3-5]$/) ? note : `${note}4`;
-      console.log('DEBUG: Note after processing:', processed);
-      return processed;
+      return note.match(/[3-5]$/) ? note : `${note}4`;
     });
-    console.log('DEBUG: All processed notes:', processedNotes);
 
     // Validate each note
     for (let i = 0; i < processedNotes.length; i++) {
       const note = processedNotes[i];
-      if (note !== '|') {
-        const isValid = validateNote(note);
-        console.log('DEBUG: Final validation of note:', note, 'valid:', isValid);
-        if (!isValid) {
-          console.log('DEBUG: Validation failed for note:', note);
-          return { 
-            notes: [], 
-            error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note[octave] (e.g., c4, c#5, cb3) or just note (e.g., c, c#, cb)` 
-          };
-        }
+      if (note !== '|' && !validateNote(note)) {
+        return { 
+          notes: [], 
+          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note[octave] (e.g., c4, c#5, cb3) or just note (e.g., c, c#, cb)` 
+        };
       }
     }
 
-    console.log('DEBUG: parseNotes returning:', { notes: processedNotes });
     return { notes: processedNotes };
   };
 
@@ -120,9 +106,6 @@ function MusicNotation() {
   }, [currentExercise]);
 
   useEffect(() => {
-    console.log('DEBUG: useEffect triggered for notation rendering');
-    console.log('DEBUG: currentExercise.pieces:', currentExercise.pieces);
-    
     // Clear all notation containers
     currentExercise.pieces.forEach(piece => {
       const container = document.getElementById(`notation-${piece.id}`);
@@ -130,11 +113,7 @@ function MusicNotation() {
     });
 
     currentExercise.pieces.forEach((piece) => {
-      console.log('DEBUG: Rendering piece:', piece.id, 'notes:', piece.notes, 'error:', piece.error);
-      if (piece.error) {
-        console.log('DEBUG: Skipping piece due to error:', piece.error);
-        return;
-      }
+      if (piece.error) return;
 
       const container = document.getElementById(`notation-${piece.id}`);
       if (!container) return;
@@ -285,31 +264,20 @@ function MusicNotation() {
 
   const handleSubmit = (pieceId: number) => (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('DEBUG: handleSubmit called for piece:', pieceId);
     const piece = currentExercise.pieces.find(p => p.id === pieceId);
-    if (!piece) {
-      console.log('DEBUG: Piece not found:', pieceId);
-      return;
-    }
+    if (!piece) return;
 
-    console.log('DEBUG: Processing noteInput:', JSON.stringify(piece.noteInput));
     const { notes, error } = parseNotes(piece.noteInput);
-    console.log('DEBUG: parseNotes result:', { notes, error });
     const lyricList = piece.lyricsInput.trim().split(/\s+/);
-    console.log('DEBUG: Processed lyrics:', lyricList);
-    
-    const updatedPiece = { ...piece, notes, lyrics: lyricList, error };
-    console.log('DEBUG: Updated piece:', updatedPiece);
     
     setCurrentExercise({
       ...currentExercise,
       pieces: currentExercise.pieces.map(p => 
         p.id === pieceId 
-          ? updatedPiece
+          ? { ...p, notes, lyrics: lyricList, error }
           : p
       )
     });
-    console.log('DEBUG: State update triggered');
   };
 
   const handleInputChange = (pieceId: number, field: 'noteInput' | 'lyricsInput', value: string) => {
@@ -682,18 +650,18 @@ function MusicNotation() {
         </button>
         {showHelp && (
           <div className="p-4 space-y-2 text-blue-700 border-t border-blue-200">
-            <p><strong>Notes Format:</strong> Use note name and octave (e.g., c/4, d/4, e/4, f/4)</p>
+            <p><strong>Notes Format:</strong> Use note name with optional octave (e.g., c d e f or c4 d4 e4 f4)</p>
             <ul className="list-disc pl-5 space-y-1">
               <li>Note names: a, b, c, d, e, f, g</li>
-              <li>Accidentals: use # for sharp (e.g., c#/4) or b for flat (e.g., cb/4)</li>
+              <li>Accidentals: use # for sharp (e.g., c#4 or just c#) or b for flat (e.g., cb4 or just cb)</li>
               <li>Octave numbers: 3 (low) to 5 (high)</li>
               <li>Separate notes with spaces</li>
               <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
               <li>Examples: 
                 <ul className="list-disc pl-5 mt-1">
-                  <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4</code> - basic notes</li>
-                  <li><code className="bg-blue-100 px-1 rounded">c#/4 db/4 e/4 f#/4</code> - with accidentals</li>
-                  <li><code className="bg-blue-100 px-1 rounded">c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5</code> - with bar line</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c d e f</code> - basic notes</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c# db e f#</code> - with accidentals</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c d e f | g a b c5</code> - with bar line</li>
                 </ul>
               </li>
             </ul>
@@ -750,9 +718,7 @@ function MusicNotation() {
         </div>
       </div>
 
-      {currentExercise.pieces.map((piece) => {
-        console.log('DEBUG: Rendering piece in UI:', piece.id, 'expanded:', expandedPieces.has(piece.id));
-        return (
+      {currentExercise.pieces.map((piece) => (
         <div key={piece.id} className="mb-8">
           <div className="border rounded-lg overflow-hidden">
             <div 
@@ -826,7 +792,7 @@ function MusicNotation() {
                 )}
                 <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Notes (e.g. c/4 d/4 e/4 f/4 | g/4 a/4 b/4 c/5):</label>
+                    <label className="block text-sm font-medium mb-1">Notes (e.g. c d e f | g a b c5):</label>
                     <input
                       type="text"
                       value={piece.noteInput}
@@ -859,8 +825,7 @@ function MusicNotation() {
             className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto mt-2"
           />
         </div>
-        );
-      })}
+      ))}
 
       <button
         onClick={addPiece}
