@@ -23,6 +23,12 @@ function App() {
             >
               New Exercise
             </button>
+            <button
+              onClick={() => musicNotationRef.current?.importExercise()}
+              className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+            >
+              Import
+            </button>
           </div>
         </div>
         

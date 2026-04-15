@@ -22,6 +22,7 @@ interface Exercise {
 export type MusicNotationHandle = {
   toggleMenu: () => void;
   createNewExercise: () => void;
+  importExercise: () => void;
 };
 
 type MusicNotationProps = {
@@ -74,6 +75,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   const samplerRef = useRef<Tone.Sampler | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [exerciseToDelete, setExerciseToDelete] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const setShowMenuWithNotify = (next: boolean) => {
     setShowMenu(next);
@@ -125,6 +127,108 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     }
 
     return { notes: processedNotes };
+  };
+
+  const normalizeNoteToken = (token: string): string => {
+    if (token === '|') return token;
+    const slashMatch = token.match(/^([a-g](?:b(?![a-g])|#)?)[/ ]([3-5])$/i);
+    if (slashMatch) return `${slashMatch[1].toLowerCase()}${slashMatch[2]}`;
+    return token.toLowerCase();
+  };
+
+  const importExerciseFromJson = (json: unknown) => {
+    if (!json || typeof json !== 'object') throw new Error('Invalid JSON: expected an object');
+
+    const obj = json as any;
+    const name = typeof obj.name === 'string' ? obj.name : undefined;
+    const description = typeof obj.description === 'string' ? obj.description : undefined;
+    const piecesRaw = Array.isArray(obj.pieces) ? obj.pieces : undefined;
+
+    if (!name) throw new Error('Invalid JSON: missing "name" (string)');
+    if (!piecesRaw || piecesRaw.length === 0) throw new Error('Invalid JSON: missing "pieces" (non-empty array)');
+
+    const pieces: Piece[] = piecesRaw.map((p: any, idx: number) => {
+      const noteInput =
+        typeof p?.noteInput === 'string'
+          ? p.noteInput
+          : Array.isArray(p?.notes)
+            ? p.notes.map((t: any) => (typeof t === 'string' ? normalizeNoteToken(t) : '')).filter(Boolean).join(' ')
+            : '';
+
+      const lyricsInput =
+        typeof p?.lyricsInput === 'string'
+          ? p.lyricsInput
+          : Array.isArray(p?.lyrics)
+            ? p.lyrics.map((t: any) => (typeof t === 'string' ? t : '')).filter(Boolean).join(' ')
+            : '';
+
+      const { notes, error } = parseNotes(noteInput);
+      const lyrics = lyricsInput.trim() ? lyricsInput.trim().split(/\s+/) : [];
+
+      return {
+        id: idx + 1,
+        noteInput,
+        lyricsInput,
+        notes,
+        lyrics,
+        error,
+      };
+    });
+
+    setCurrentExercise({
+      id: Date.now().toString(),
+      name,
+      description,
+      pieces,
+      createdAt: Date.now(),
+    });
+  };
+
+  const onImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const onImportFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      importExerciseFromJson(JSON.parse(text));
+    } catch (err: any) {
+      alert(err?.message || 'Failed to load exercise JSON');
+    }
+  };
+
+  const exportExerciseToJson = () => {
+    const exportPayload = {
+      name: currentExercise.name,
+      description: currentExercise.description,
+      pieces: currentExercise.pieces.map((p) => ({
+        noteInput: p.noteInput,
+        lyricsInput: p.lyricsInput,
+        notes: p.notes,
+        lyrics: p.lyrics,
+      })),
+    };
+
+    const safeName = (currentExercise.name || 'exercise')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'exercise';
+
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
@@ -418,6 +522,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   useImperativeHandle(ref, () => ({
     toggleMenu,
     createNewExercise,
+    importExercise: onImportClick,
   }));
 
   const transposeNote = (note: string, semitones: number): string => {
@@ -631,6 +736,14 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   return (
     <div className="space-y-8">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={onImportFilePicked}
+      />
+
       {showMenu && (
         <div className="bg-white p-4 rounded-lg shadow-lg border">
           <h3 className="text-lg font-semibold mb-4">Saved Exercises</h3>
@@ -658,6 +771,12 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
         <div className="space-x-4">
+          <button
+            onClick={exportExerciseToJson}
+            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+          >
+            Export
+          </button>
           <button
             onClick={saveExercise}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
