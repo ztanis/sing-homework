@@ -14,6 +14,7 @@ interface Piece {
 interface Exercise {
   id: string;
   name: string;
+  description?: string;
   pieces: Piece[];
   createdAt: number;
 }
@@ -28,6 +29,7 @@ function MusicNotation() {
     return saved ? JSON.parse(saved) : {
       id: Date.now().toString(),
       name: 'New Exercise',
+      description: undefined,
       pieces: [{
         id: 1,
         noteInput: 'c d e f | g a b c5',
@@ -42,6 +44,7 @@ function MusicNotation() {
   const [showTransposeModal, setShowTransposeModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [exerciseName, setExerciseName] = useState('');
+  const [exerciseDescription, setExerciseDescription] = useState('');
   const [selectedPieceId, setSelectedPieceId] = useState<number | null>(null);
   const [transposeSemitones, setTransposeSemitones] = useState(0);
   const [expandedPieces, setExpandedPieces] = useState<Set<number>>(() => {
@@ -49,6 +52,7 @@ function MusicNotation() {
     return new Set(pieces.length > 0 ? [pieces[pieces.length - 1].id] : []);
   });
   const [showHelp, setShowHelp] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isAudioReady, setIsAudioReady] = useState(false);
@@ -308,6 +312,7 @@ function MusicNotation() {
 
   const saveExercise = () => {
     setExerciseName(currentExercise.name);
+    setExerciseDescription(currentExercise.description || '');
     setShowSaveModal(true);
   };
 
@@ -317,6 +322,7 @@ function MusicNotation() {
     const updatedExercise = {
       ...currentExercise,
       name: exerciseName.trim(),
+      description: exerciseDescription.trim() || undefined,
       id: currentExercise.id || Date.now().toString(),
       createdAt: currentExercise.createdAt || Date.now()
     };
@@ -346,6 +352,7 @@ function MusicNotation() {
         setCurrentExercise({
           id: Date.now().toString(),
           name: 'New Exercise',
+          description: undefined,
           pieces: [{
             id: 1,
             noteInput: '',
@@ -370,6 +377,7 @@ function MusicNotation() {
     setCurrentExercise({
       id: Date.now().toString(),
       name: 'New Exercise',
+      description: undefined,
       pieces: [{
         id: 1,
         noteInput: '',
@@ -675,6 +683,33 @@ function MusicNotation() {
         )}
       </div>
 
+      {/* Exercise Description */}
+      {currentExercise.description && (
+        <div className="bg-green-50 rounded-lg border border-green-200">
+          <div className="p-4">
+            <h3 className="text-lg font-semibold text-green-800 mb-2">Exercise Description</h3>
+            <div className="text-green-700">
+              {showFullDescription ? (
+                <div className="whitespace-pre-wrap">{currentExercise.description}</div>
+              ) : (
+                <div>
+                  {currentExercise.description.split('\n')[0]}
+                  {currentExercise.description.includes('\n') && '...'}
+                </div>
+              )}
+              {currentExercise.description.includes('\n') && (
+                <button
+                  onClick={() => setShowFullDescription(!showFullDescription)}
+                  className="mt-2 text-green-600 hover:text-green-800 text-sm font-medium"
+                >
+                  {showFullDescription ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Global Playback Speed Control */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
         <div className="flex items-center space-x-4">
@@ -888,6 +923,17 @@ function MusicNotation() {
                   onChange={(e) => setExerciseName(e.target.value)}
                   className="border rounded px-2 py-1 w-full"
                   placeholder="Enter exercise name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Exercise Description (optional):
+                </label>
+                <textarea
+                  value={exerciseDescription}
+                  onChange={(e) => setExerciseDescription(e.target.value)}
+                  className="border rounded px-2 py-1 w-full h-24 resize-none"
+                  placeholder="Enter description for this exercise..."
                 />
               </div>
               <div className="flex justify-end space-x-2">
