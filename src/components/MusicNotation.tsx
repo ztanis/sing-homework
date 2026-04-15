@@ -47,6 +47,7 @@ function MusicNotation() {
   const [exerciseDescription, setExerciseDescription] = useState('');
   const [selectedPieceId, setSelectedPieceId] = useState<number | null>(null);
   const [transposeSemitones, setTransposeSemitones] = useState(0);
+  const [transposeCopies, setTransposeCopies] = useState(1);
   const [expandedPieces, setExpandedPieces] = useState<Set<number>>(() => {
     const pieces = currentExercise.pieces;
     return new Set(pieces.length > 0 ? [pieces[pieces.length - 1].id] : []);
@@ -419,27 +420,40 @@ function MusicNotation() {
   const handleCopyPiece = (pieceId: number) => {
     setSelectedPieceId(pieceId);
     setTransposeSemitones(0);
+    setTransposeCopies(1);
     setShowTransposeModal(true);
   };
 
   const confirmCopyPiece = () => {
     if (selectedPieceId === null) return;
     
-    const pieceToCopy = currentExercise.pieces.find(p => p.id === selectedPieceId);
+    const pieceIndex = currentExercise.pieces.findIndex(p => p.id === selectedPieceId);
+    const pieceToCopy = currentExercise.pieces[pieceIndex];
     if (!pieceToCopy) return;
 
-    const newId = Math.max(...currentExercise.pieces.map(p => p.id)) + 1;
-    const transposedNotes = pieceToCopy.notes.map(note => transposeNote(note, transposeSemitones));
-    const transposedNoteInput = transposedNotes.join(' ');
+    const maxExistingId = Math.max(...currentExercise.pieces.map(p => p.id));
+    const copyCount = Math.max(1, Math.min(99, transposeCopies || 1));
+
+    const copiesAsc = Array.from({ length: copyCount }, (_, idx) => {
+      const semitones = transposeSemitones * (idx + 1);
+      const transposedNotes = pieceToCopy.notes.map(note => transposeNote(note, semitones));
+      const transposedNoteInput = transposedNotes.join(' ');
+      return {
+        ...pieceToCopy,
+        id: maxExistingId + idx + 1,
+        noteInput: transposedNoteInput,
+        notes: transposedNotes,
+      };
+    });
+
+    // Keep natural order: +S, +2S, ..., +NS.
+    const copiesForInsert = copiesAsc;
+    const newPieces = [...currentExercise.pieces];
+    newPieces.splice(pieceIndex + 1, 0, ...copiesForInsert);
 
     setCurrentExercise({
       ...currentExercise,
-      pieces: [...currentExercise.pieces, {
-        ...pieceToCopy,
-        id: newId,
-        noteInput: transposedNoteInput,
-        notes: transposedNotes
-      }]
+      pieces: newPieces
     });
 
     setShowTransposeModal(false);
@@ -885,6 +899,19 @@ function MusicNotation() {
                   max="12"
                   value={transposeSemitones}
                   onChange={(e) => setTransposeSemitones(parseInt(e.target.value) || 0)}
+                  className="border rounded px-2 py-1 w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Number of copies to create (1 to 99):
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={transposeCopies}
+                  onChange={(e) => setTransposeCopies(parseInt(e.target.value) || 1)}
                   className="border rounded px-2 py-1 w-full"
                 />
               </div>
