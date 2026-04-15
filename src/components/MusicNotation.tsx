@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 import * as Tone from 'tone';
 
@@ -19,7 +19,19 @@ interface Exercise {
   createdAt: number;
 }
 
-function MusicNotation() {
+export type MusicNotationHandle = {
+  toggleMenu: () => void;
+  createNewExercise: () => void;
+};
+
+type MusicNotationProps = {
+  onMenuShownChange?: (shown: boolean) => void;
+};
+
+const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(function MusicNotation(
+  { onMenuShownChange }: MusicNotationProps,
+  ref,
+) {
   const [exercises, setExercises] = useState<Exercise[]>(() => {
     const saved = localStorage.getItem('exercises');
     return saved ? JSON.parse(saved) : [];
@@ -62,6 +74,19 @@ function MusicNotation() {
   const samplerRef = useRef<Tone.Sampler | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [exerciseToDelete, setExerciseToDelete] = useState<string | null>(null);
+
+  const setShowMenuWithNotify = (next: boolean) => {
+    setShowMenu(next);
+    onMenuShownChange?.(next);
+  };
+
+  const toggleMenu = () => {
+    setShowMenu(prev => {
+      const next = !prev;
+      onMenuShownChange?.(next);
+      return next;
+    });
+  };
 
   const validateNote = (note: string): boolean => {
     if (note === '|') return true;
@@ -338,7 +363,7 @@ function MusicNotation() {
 
   const loadExercise = (exercise: Exercise) => {
     setCurrentExercise(exercise);
-    setShowMenu(false);
+    setShowMenuWithNotify(false);
   };
 
   const deleteExercise = (id: string) => {
@@ -389,6 +414,11 @@ function MusicNotation() {
       createdAt: Date.now()
     });
   };
+
+  useImperativeHandle(ref, () => ({
+    toggleMenu,
+    createNewExercise,
+  }));
 
   const transposeNote = (note: string, semitones: number): string => {
     if (note === '|') return note;
@@ -601,30 +631,6 @@ function MusicNotation() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
-        <div className="space-x-4">
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-          >
-            {showMenu ? 'Hide Menu' : 'Show Menu'}
-          </button>
-          <button
-            onClick={createNewExercise}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            New Exercise
-          </button>
-          <button
-            onClick={saveExercise}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Save Exercise
-          </button>
-        </div>
-      </div>
-
       {showMenu && (
         <div className="bg-white p-4 rounded-lg shadow-lg border">
           <h3 className="text-lg font-semibold mb-4">Saved Exercises</h3>
@@ -648,6 +654,18 @@ function MusicNotation() {
           </div>
         </div>
       )}
+
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
+        <div className="space-x-4">
+          <button
+            onClick={saveExercise}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Save Exercise
+          </button>
+        </div>
+      </div>
 
       {/* Collapsible Help Section */}
       <div className="bg-blue-50 rounded-lg border border-blue-200">
@@ -1007,6 +1025,6 @@ function MusicNotation() {
       )}
     </div>
   );
-}
+});
 
 export default MusicNotation; 
