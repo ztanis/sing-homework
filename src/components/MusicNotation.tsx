@@ -1,6 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 import * as Tone from 'tone';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+
+type ExerciseSource = 'preset' | 'memory';
 
 interface Piece {
   id: number;
@@ -17,6 +20,7 @@ interface Exercise {
   description?: string;
   pieces: Piece[];
   createdAt: number;
+  source?: ExerciseSource;
 }
 
 export type MusicNotationHandle = {
@@ -33,9 +37,64 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   { onMenuShownChange }: MusicNotationProps,
   ref,
 ) {
+  const presetModules = import.meta.glob('../exercises/presets/*.json', { eager: true }) as Record<
+    string,
+    { default: any }
+  >;
+
+  const presetExercises: Exercise[] = Object.entries(presetModules)
+    .map(([path, mod]) => {
+      const raw = mod?.default ?? mod;
+      const name = typeof raw?.name === 'string' ? raw.name : undefined;
+      const description = typeof raw?.description === 'string' ? raw.description : undefined;
+      const piecesRaw = Array.isArray(raw?.pieces) ? raw.pieces : [];
+      if (!name || piecesRaw.length === 0) return null;
+
+      const idFromFile = path.split('/').pop()?.replace(/\.json$/i, '') || name;
+      const pieces: Piece[] = piecesRaw.map((p: any, idx: number) => {
+        const noteInput =
+          typeof p?.noteInput === 'string'
+            ? p.noteInput
+            : Array.isArray(p?.notes)
+              ? p.notes.map((t: any) => (typeof t === 'string' ? normalizeNoteToken(t) : '')).filter(Boolean).join(' ')
+              : '';
+
+        const lyricsInput =
+          typeof p?.lyricsInput === 'string'
+            ? p.lyricsInput
+            : Array.isArray(p?.lyrics)
+              ? p.lyrics.map((t: any) => (typeof t === 'string' ? t : '')).filter(Boolean).join(' ')
+              : '';
+
+        const { notes, error } = parseNotes(noteInput);
+        const lyrics = lyricsInput.trim() ? lyricsInput.trim().split(/\s+/) : [];
+
+        return {
+          id: idx + 1,
+          noteInput,
+          lyricsInput,
+          notes,
+          lyrics,
+          error,
+        };
+      });
+
+      return {
+        id: `preset:${idFromFile}`,
+        name,
+        description,
+        pieces,
+        createdAt: 0,
+        source: 'preset' as const,
+      };
+    })
+    .filter(Boolean) as Exercise[];
+
   const [exercises, setExercises] = useState<Exercise[]>(() => {
     const saved = localStorage.getItem('exercises');
-    return saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((e: any) => ({ ...e, source: e?.source === 'preset' ? 'preset' : 'memory' }));
   });
   const [currentExercise, setCurrentExercise] = useState<Exercise>(() => {
     const saved = localStorage.getItem('currentExercise');
@@ -50,7 +109,8 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         notes: ['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5'],
         lyrics: ['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']
       }],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      source: 'memory'
     };
   });
   const [showMenu, setShowMenu] = useState(false);
@@ -90,14 +150,14 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     });
   };
 
-  const validateNote = (note: string): boolean => {
+  function validateNote(note: string): boolean {
     if (note === '|') return true;
     // Allow 'b' as a note name, but not as a flat modifier
     const noteRegex = /^[a-g](b(?![a-g])|#)?[3-5]?$/;
     return noteRegex.test(note);
-  };
+  }
 
-  const parseNotes = (input: string): { notes: string[], error?: string } => {
+  function parseNotes(input: string): { notes: string[], error?: string } {
     const noteList = input.trim().split(/\s+/);
     
     // Check for empty input
@@ -127,14 +187,14 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     }
 
     return { notes: processedNotes };
-  };
+  }
 
-  const normalizeNoteToken = (token: string): string => {
+  function normalizeNoteToken(token: string): string {
     if (token === '|') return token;
     const slashMatch = token.match(/^([a-g](?:b(?![a-g])|#)?)[/ ]([3-5])$/i);
     if (slashMatch) return `${slashMatch[1].toLowerCase()}${slashMatch[2]}`;
     return token.toLowerCase();
-  };
+  }
 
   const importExerciseFromJson = (json: unknown) => {
     if (!json || typeof json !== 'object') throw new Error('Invalid JSON: expected an object');
@@ -449,12 +509,14 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   const confirmSaveExercise = () => {
     if (!exerciseName.trim()) return;
 
+    const savingFromPreset = currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:');
     const updatedExercise = {
       ...currentExercise,
       name: exerciseName.trim(),
       description: exerciseDescription.trim() || undefined,
-      id: currentExercise.id || Date.now().toString(),
-      createdAt: currentExercise.createdAt || Date.now()
+      id: savingFromPreset ? Date.now().toString() : (currentExercise.id || Date.now().toString()),
+      createdAt: savingFromPreset ? Date.now() : (currentExercise.createdAt || Date.now()),
+      source: 'memory' as const
     };
 
     setExercises(prev => {
@@ -466,7 +528,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   };
 
   const loadExercise = (exercise: Exercise) => {
-    setCurrentExercise(exercise);
+    setCurrentExercise({ ...exercise, source: exercise.source === 'preset' ? 'preset' : 'memory' });
     setShowMenuWithNotify(false);
   };
 
@@ -746,30 +808,81 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
       {showMenu && (
         <div className="bg-white p-4 rounded-lg shadow-lg border">
-          <h3 className="text-lg font-semibold mb-4">Saved Exercises</h3>
+          <h3 className="text-lg font-semibold mb-4">Exercises</h3>
           <div className="space-y-2">
-            {exercises.map(exercise => (
-              <div key={exercise.id} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded">
-                <button
-                  onClick={() => loadExercise(exercise)}
-                  className="flex-1 text-left"
-                >
-                  {exercise.name}
-                </button>
-                <button
-                  onClick={() => deleteExercise(exercise.id)}
-                  className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
+            {[
+              ...presetExercises.sort((a, b) => a.name.localeCompare(b.name)),
+              ...exercises.map(e => ({ ...e, source: 'memory' as const })),
+            ].map(exercise => {
+              const isPreset = exercise.source === 'preset' || exercise.id.startsWith('preset:');
+              return (
+                <div key={exercise.id} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded gap-3">
+                  <button
+                    onClick={() => loadExercise(exercise)}
+                    className="flex-1 text-left flex items-center gap-3"
+                  >
+                    <span className="truncate">{exercise.name}</span>
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                        isPreset
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : 'bg-gray-50 text-gray-700 border-gray-200'
+                      }`}
+                    >
+                      {isPreset ? 'Preset' : 'In memory'}
+                    </span>
+                  </button>
+                  {!isPreset && (
+                    <button
+                      onClick={() => deleteExercise(exercise.id)}
+                      className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">{currentExercise.name}</h2>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                (currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:'))
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : 'bg-gray-50 text-gray-700 border-gray-200'
+              }`}
+            >
+              {(currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:')) ? 'Preset' : 'In memory'}
+            </span>
+            <div className="relative group">
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-100 text-gray-600"
+                aria-label="Exercise type info"
+              >
+                <InformationCircleIcon className="w-5 h-5" />
+              </button>
+              <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 z-10">
+                <div className="bg-gray-900 text-white text-xs rounded px-3 py-2 shadow-lg">
+                  <div className="font-semibold mb-1">Preset vs In memory</div>
+                  <div>
+                    <strong>Preset</strong> exercises are predefined and shipped with the app.
+                    <br />
+                    <strong>In memory</strong> exercises are created/edited by you in the browser. They are not guaranteed
+                    to persist and can be lost if browser data is cleared. We recommend using <strong>Export</strong> to
+                    keep a copy.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div className="space-x-4">
           <button
             onClick={exportExerciseToJson}
