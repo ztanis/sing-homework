@@ -10,10 +10,13 @@ interface Piece {
   id: number;
   noteInput: string;
   lyricsInput: string;
-  notes: string[];
-  lyrics: string[];
-  error?: string;
 }
+
+type DerivedPiece = Piece & {
+  notes: string[];
+  lyrics: string[]; // aligned to notes indices (incl. bars)
+  error?: string;
+};
 
 interface Exercise {
   id: string;
@@ -68,16 +71,10 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
               ? p.lyrics.map((t: any) => (typeof t === 'string' ? t : '')).filter(Boolean).join(' ')
               : '';
 
-        const { notes, error } = parseNotes(noteInput);
-        const lyrics = lyricsInput.trim() ? lyricsInput.trim().split(/\s+/) : [];
-
         return {
           id: idx + 1,
           noteInput,
           lyricsInput,
-          notes,
-          lyrics,
-          error,
         };
       });
 
@@ -100,7 +97,15 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   });
   const [currentExercise, setCurrentExercise] = useState<Exercise>(() => {
     const saved = localStorage.getItem('currentExercise');
-    return saved ? JSON.parse(saved) : {
+    if (saved) return JSON.parse(saved);
+
+    // First visit: default to the first preset exercise (by name).
+    if (presetExercises.length > 0) {
+      const firstPreset = [...presetExercises].sort((a, b) => a.name.localeCompare(b.name))[0]!;
+      return firstPreset;
+    }
+
+    return {
       id: Date.now().toString(),
       name: t('app.newExercise'),
       description: undefined,
@@ -108,8 +113,6 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         id: 1,
         noteInput: 'c d e f | g a b c5',
         lyricsInput: 'Do Re Mi Fa | Sol La Ti Do',
-        notes: ['c/4', 'd/4', 'e/4', 'f/4', '|', 'g/4', 'a/4', 'b/4', 'c/5'],
-        lyrics: ['Do', 'Re', 'Mi', 'Fa', '|', 'Sol', 'La', 'Ti', 'Do']
       }],
       createdAt: Date.now(),
       source: 'memory'
@@ -198,6 +201,69 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     return token.toLowerCase();
   }
 
+  function parseLyricsTokens(input: string): string[] {
+    const trimmed = input.trim();
+    if (!trimmed) return [];
+    return trimmed.split(/\s+/);
+  }
+
+  function derivePiece(piece: Piece): DerivedPiece {
+    const { notes, error } = parseNotes(piece.noteInput);
+    const lyricTokens = parseLyricsTokens(piece.lyricsInput);
+
+    // Align lyrics to note indices (including bars). This lets rendering simply use lyrics[i].
+    const alignedLyrics: string[] = new Array(notes.length);
+    let lyricIdx = 0;
+
+    for (let i = 0; i < notes.length; i++) {
+      const note = notes[i];
+      if (note === '|') {
+        alignedLyrics[i] = '|';
+        if (lyricTokens[lyricIdx] === '|') lyricIdx++;
+        continue;
+      }
+
+      while (lyricTokens[lyricIdx] === '|') lyricIdx++;
+      alignedLyrics[i] = lyricTokens[lyricIdx] ?? '';
+      lyricIdx++;
+    }
+
+    return { ...piece, notes, lyrics: alignedLyrics, error };
+  }
+
+  function ensureExerciseShape(e: any): Exercise {
+    const name = typeof e?.name === 'string' ? e.name : t('app.newExercise');
+    const description = typeof e?.description === 'string' ? e.description : undefined;
+    const id = typeof e?.id === 'string' ? e.id : Date.now().toString();
+    const createdAt = typeof e?.createdAt === 'number' ? e.createdAt : Date.now();
+    const source = e?.source === 'preset' ? 'preset' : 'memory';
+    const piecesRaw = Array.isArray(e?.pieces) ? e.pieces : [];
+
+    const pieces: Piece[] = piecesRaw.map((p: any, idx: number) => {
+      const noteInput =
+        typeof p?.noteInput === 'string'
+          ? p.noteInput
+          : Array.isArray(p?.notes)
+            ? p.notes.map((t: any) => (typeof t === 'string' ? normalizeNoteToken(t) : '')).filter(Boolean).join(' ')
+            : '';
+
+      const lyricsInput =
+        typeof p?.lyricsInput === 'string'
+          ? p.lyricsInput
+          : Array.isArray(p?.lyrics)
+            ? p.lyrics.map((t: any) => (typeof t === 'string' ? t : '')).filter(Boolean).join(' ')
+            : '';
+
+      return {
+        id: typeof p?.id === 'number' ? p.id : idx + 1,
+        noteInput,
+        lyricsInput,
+      };
+    });
+
+    return { id, name, description, pieces, createdAt, source };
+  }
+
   const importExerciseFromJson = (json: unknown) => {
     if (!json || typeof json !== 'object') throw new Error('Invalid JSON: expected an object');
 
@@ -224,16 +290,10 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             ? p.lyrics.map((t: any) => (typeof t === 'string' ? t : '')).filter(Boolean).join(' ')
             : '';
 
-      const { notes, error } = parseNotes(noteInput);
-      const lyrics = lyricsInput.trim() ? lyricsInput.trim().split(/\s+/) : [];
-
       return {
         id: idx + 1,
         noteInput,
         lyricsInput,
-        notes,
-        lyrics,
-        error,
       };
     });
 
@@ -270,8 +330,6 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       pieces: currentExercise.pieces.map((p) => ({
         noteInput: p.noteInput,
         lyricsInput: p.lyricsInput,
-        notes: p.notes,
-        lyrics: p.lyrics,
       })),
     };
 
@@ -302,13 +360,22 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   }, [currentExercise]);
 
   useEffect(() => {
+    // Normalize any older saved format (notes/lyrics present) into input-only shape.
+    // This also ensures currentExercise always has a safe structure.
+    setCurrentExercise(prev => ensureExerciseShape(prev));
+    setExercises(prev => prev.map(ensureExerciseShape));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     // Clear all notation containers
     currentExercise.pieces.forEach(piece => {
       const container = document.getElementById(`notation-${piece.id}`);
       if (container) container.innerHTML = '';
     });
 
-    currentExercise.pieces.forEach((piece) => {
+    currentExercise.pieces.forEach((rawPiece) => {
+      const piece = derivePiece(rawPiece);
       if (piece.error) return;
 
       const container = document.getElementById(`notation-${piece.id}`);
@@ -334,7 +401,8 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
           }
         } else {
           currentMeasure.notes.push(note);
-          if (piece.lyrics[i]) currentMeasure.lyrics.push(piece.lyrics[i]);
+          const lyric = piece.lyrics[i];
+          if (lyric && lyric !== '|') currentMeasure.lyrics.push(lyric);
         }
       });
       if (currentMeasure.notes.length > 0) {
@@ -464,20 +532,12 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   const handleSubmit = (pieceId: number) => (e: React.FormEvent) => {
     e.preventDefault();
-    const piece = currentExercise.pieces.find(p => p.id === pieceId);
-    if (!piece) return;
-
-    const { notes, error } = parseNotes(piece.noteInput);
-    const lyricList = piece.lyricsInput.trim().split(/\s+/);
-    
-    setCurrentExercise({
-      ...currentExercise,
-      pieces: currentExercise.pieces.map(p => 
-        p.id === pieceId 
-          ? { ...p, notes, lyrics: lyricList, error }
-          : p
-      )
-    });
+    // Notes/lyrics are derived automatically from inputs, so submitting just clears any prior error-like UI state.
+    // Keeping the button for UX parity (explicit "Update"), but the app works without needing it.
+    setCurrentExercise(prev => ({
+      ...prev,
+      pieces: prev.pieces.map(p => (p.id === pieceId ? { ...p } : p)),
+    }));
   };
 
   const handleInputChange = (pieceId: number, field: 'noteInput' | 'lyricsInput', value: string) => {
@@ -499,8 +559,6 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         id: newId,
         noteInput: '',
         lyricsInput: '',
-        notes: [],
-        lyrics: []
       }]
     });
     setExpandedPieces(new Set([newId]));
@@ -555,8 +613,6 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             id: 1,
             noteInput: '',
             lyricsInput: '',
-            notes: [],
-            lyrics: []
           }],
           createdAt: Date.now()
         });
@@ -580,8 +636,6 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         id: 1,
         noteInput: '',
         lyricsInput: '',
-        notes: [],
-        lyrics: []
       }],
       createdAt: Date.now()
     });
@@ -639,13 +693,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
     const copiesAsc = Array.from({ length: copyCount }, (_, idx) => {
       const semitones = transposeSemitones * (idx + 1);
-      const transposedNotes = pieceToCopy.notes.map(note => transposeNote(note, semitones));
+      const { notes } = parseNotes(pieceToCopy.noteInput);
+      const transposedNotes = notes.map(note => transposeNote(note, semitones));
       const transposedNoteInput = transposedNotes.join(' ');
       return {
         ...pieceToCopy,
         id: maxExistingId + idx + 1,
         noteInput: transposedNoteInput,
-        notes: transposedNotes,
       };
     });
 
@@ -735,6 +789,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   // Function to play a piece using Tone.js
   const playPiece = async (piece: Piece) => {
+    const derived = derivePiece(piece);
     console.log('playPiece called for piece id:', piece.id);
     if (playingPieceId !== null) {
       console.log('Stopping current playback');
@@ -768,7 +823,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
     // Schedule all notes
     let currentTime = 0;
-    for (const note of piece.notes) {
+    for (const note of derived.notes) {
       if (note === '|') {
         continue;
       }
@@ -1023,7 +1078,9 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         </div>
       </div>
 
-      {currentExercise.pieces.map((piece) => (
+      {currentExercise.pieces.map((rawPiece) => {
+        const piece = derivePiece(rawPiece);
+        return (
         <div key={piece.id} className="mb-8">
           <div className="border rounded-lg overflow-hidden">
             <div 
@@ -1130,7 +1187,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             className="bg-white p-4 rounded-lg shadow-lg overflow-x-auto mt-2"
           />
         </div>
-      ))}
+      )})}
 
       <button
         onClick={addPiece}
