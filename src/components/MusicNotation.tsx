@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { Factory, Annotation, BarlineType, Accidental } from 'vexflow';
 import * as Tone from 'tone';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { useI18n } from '../i18n';
 
 type ExerciseSource = 'preset' | 'memory';
 
@@ -37,6 +38,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   { onMenuShownChange }: MusicNotationProps,
   ref,
 ) {
+  const { t } = useI18n();
   const presetModules = import.meta.glob('../exercises/presets/*.json', { eager: true }) as Record<
     string,
     { default: any }
@@ -100,7 +102,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     const saved = localStorage.getItem('currentExercise');
     return saved ? JSON.parse(saved) : {
       id: Date.now().toString(),
-      name: 'New Exercise',
+      name: t('app.newExercise'),
       description: undefined,
       pieces: [{
         id: 1,
@@ -162,7 +164,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     
     // Check for empty input
     if (noteList.length === 0 || (noteList.length === 1 && noteList[0] === '')) {
-      return { notes: [], error: 'Please enter at least one note' };
+      return { notes: [], error: t('error.notes.empty') };
     }
 
     // Validate each note and add default octave if needed
@@ -181,7 +183,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       if (note !== '|' && !validateNote(note)) {
         return { 
           notes: [], 
-          error: `Invalid note format at position ${i + 1}: "${note}". Expected format: note[octave] (e.g., c4, c#5, cb3) or just note (e.g., c, c#, cb)` 
+          error: t('error.notes.invalidAt', { pos: i + 1, note })
         };
       }
     }
@@ -257,7 +259,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       const text = await file.text();
       importExerciseFromJson(JSON.parse(text));
     } catch (err: any) {
-      alert(err?.message || 'Failed to load exercise JSON');
+      alert(err?.message || t('error.jsonLoad'));
     }
   };
 
@@ -419,7 +421,11 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
           // Display error message on the canvas
           const context = factory.getContext();
           context.setFont('Arial', 14);
-          context.fillText(`Error: ${error.message || 'Failed to render notes'}`, x, y + 50);
+          context.fillText(
+            t('error.render', { message: error.message || t('error.render.fallback') }),
+            x,
+            y + 50,
+          );
         }
       });
     });
@@ -543,7 +549,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       if (currentExercise.id === exerciseToDelete) {
         setCurrentExercise({
           id: Date.now().toString(),
-          name: 'New Exercise',
+          name: t('app.newExercise'),
           description: undefined,
           pieces: [{
             id: 1,
@@ -562,13 +568,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   const createNewExercise = () => {
     if (currentExercise.pieces.some(p => p.noteInput || p.lyricsInput)) {
-      if (!confirm('Are you sure you want to create a new exercise? Any unsaved changes will be lost.')) {
+      if (!confirm(t('confirm.newExercise'))) {
         return;
       }
     }
     setCurrentExercise({
       id: Date.now().toString(),
-      name: 'New Exercise',
+      name: t('app.newExercise'),
       description: undefined,
       pieces: [{
         id: 1,
@@ -741,7 +747,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
     if (!isAudioReady || !samplerRef.current) {
       console.log('Audio not ready:', { isAudioReady, sampler: samplerRef.current });
-      alert('Audio is not ready yet. Please wait a moment and try again.');
+      alert(t('error.audioNotReady'));
       return;
     }
 
@@ -808,7 +814,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
       {showMenu && (
         <div className="bg-white p-4 rounded-lg shadow-lg border">
-          <h3 className="text-lg font-semibold mb-4">Exercises</h3>
+          <h3 className="text-lg font-semibold mb-4">{t('exercise.list.title')}</h3>
           <div className="space-y-2">
             {[
               ...presetExercises.sort((a, b) => a.name.localeCompare(b.name)),
@@ -829,7 +835,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                           : 'bg-gray-50 text-gray-700 border-gray-200'
                       }`}
                     >
-                      {isPreset ? 'Preset' : 'In memory'}
+                      {isPreset ? t('exercise.tag.preset') : t('exercise.tag.memory')}
                     </span>
                   </button>
                   {!isPreset && (
@@ -837,7 +843,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                       onClick={() => deleteExercise(exercise.id)}
                       className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
                     >
-                      Delete
+                      {t('exercise.delete')}
                     </button>
                   )}
                 </div>
@@ -858,25 +864,25 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                   : 'bg-gray-50 text-gray-700 border-gray-200'
               }`}
             >
-              {(currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:')) ? 'Preset' : 'In memory'}
+              {(currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:'))
+                ? t('exercise.tag.preset')
+                : t('exercise.tag.memory')}
             </span>
             <div className="relative group">
               <button
                 type="button"
                 className="p-1 rounded hover:bg-gray-100 text-gray-600"
-                aria-label="Exercise type info"
+                aria-label={t('exercise.typeInfo.aria')}
               >
                 <InformationCircleIcon className="w-5 h-5" />
               </button>
               <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 z-10">
                 <div className="bg-gray-900 text-white text-xs rounded px-3 py-2 shadow-lg">
-                  <div className="font-semibold mb-1">Preset vs In memory</div>
+                  <div className="font-semibold mb-1">{t('exercise.typeInfo.title')}</div>
                   <div>
-                    <strong>Preset</strong> exercises are predefined and shipped with the app.
+                    <strong>{t('exercise.tag.preset')}</strong> {t('exercise.typeInfo.preset')}
                     <br />
-                    <strong>In memory</strong> exercises are created/edited by you in the browser. They are not guaranteed
-                    to persist and can be lost if browser data is cleared. We recommend using <strong>Export</strong> to
-                    keep a copy.
+                    <strong>{t('exercise.tag.memory')}</strong> {t('exercise.typeInfo.memory')}
                   </div>
                 </div>
               </div>
@@ -888,13 +894,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             onClick={exportExerciseToJson}
             className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
           >
-            Export
+            {t('exercise.export')}
           </button>
           <button
             onClick={saveExercise}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
-            Save Exercise
+            {t('exercise.save')}
           </button>
         </div>
       </div>
@@ -905,7 +911,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
           className="w-full flex justify-between items-center px-4 py-3 focus:outline-none"
           onClick={() => setShowHelp((prev) => !prev)}
         >
-          <span className="text-lg font-semibold text-blue-800">How to Write Notation</span>
+          <span className="text-lg font-semibold text-blue-800">{t('help.title')}</span>
           <svg
             className={`w-5 h-5 transform transition-transform ${showHelp ? 'rotate-180' : ''}`}
             fill="none"
@@ -922,26 +928,26 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         </button>
         {showHelp && (
           <div className="p-4 space-y-2 text-blue-700 border-t border-blue-200">
-            <p><strong>Notes Format:</strong> Use note name with optional octave (e.g., c d e f or c4 d4 e4 f4)</p>
+            <p><strong>{t('help.notesFormat.title')}</strong> {t('help.notesFormat.body')}</p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Note names: a, b, c, d, e, f, g</li>
-              <li>Accidentals: use # for sharp (e.g., c#4 or just c#) or b for flat (e.g., cb4 or just cb)</li>
-              <li>Octave numbers: 3 (low) to 5 (high)</li>
-              <li>Separate notes with spaces</li>
-              <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to create a bar line</li>
-              <li>Examples: 
+              <li>{t('help.notesFormat.noteNames')}</li>
+              <li>{t('help.notesFormat.accidentals')}</li>
+              <li>{t('help.notesFormat.octaves')}</li>
+              <li>{t('help.notesFormat.separate')}</li>
+              <li>{t('help.notesFormat.bar')} <code className="bg-blue-100 px-1 rounded">|</code></li>
+              <li>{t('help.notesFormat.examples')}
                 <ul className="list-disc pl-5 mt-1">
-                  <li><code className="bg-blue-100 px-1 rounded">c d e f</code> - basic notes</li>
-                  <li><code className="bg-blue-100 px-1 rounded">c# db e f#</code> - with accidentals</li>
-                  <li><code className="bg-blue-100 px-1 rounded">c d e f | g a b c5</code> - with bar line</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c d e f</code> — {t('help.notesFormat.example.basic')}</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c# db e f#</code> — {t('help.notesFormat.example.acc')}</li>
+                  <li><code className="bg-blue-100 px-1 rounded">c d e f | g a b c5</code> — {t('help.notesFormat.example.bar')}</li>
                 </ul>
               </li>
             </ul>
-            <p><strong>Lyrics Format:</strong> One word per note, separated by spaces</p>
+            <p><strong>{t('help.lyricsFormat.title')}</strong> {t('help.lyricsFormat.body')}</p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Each word will appear under its corresponding note</li>
-              <li>Use <code className="bg-blue-100 px-1 rounded">|</code> to separate lyrics for different measures</li>
-              <li>Example: <code className="bg-blue-100 px-1 rounded">Do Re Mi Fa | Sol La Ti Do</code></li>
+              <li>{t('help.lyricsFormat.perNote')}</li>
+              <li>{t('help.lyricsFormat.bar')} <code className="bg-blue-100 px-1 rounded">|</code></li>
+              <li>{t('help.lyricsFormat.example')} <code className="bg-blue-100 px-1 rounded">Do Re Mi Fa | Sol La Ti Do</code></li>
             </ul>
           </div>
         )}
@@ -951,7 +957,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       {currentExercise.description && (
         <div className="bg-green-50 rounded-lg border border-green-200">
           <div className="p-4">
-            <h3 className="text-lg font-semibold text-green-800 mb-2">Exercise Description</h3>
+            <h3 className="text-lg font-semibold text-green-800 mb-2">{t('exercise.description.title')}</h3>
             <div className="text-green-700">
               {showFullDescription ? (
                 <div className="whitespace-pre-wrap">{currentExercise.description}</div>
@@ -966,7 +972,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                   onClick={() => setShowFullDescription(!showFullDescription)}
                   className="mt-2 text-green-600 hover:text-green-800 text-sm font-medium"
                 >
-                  {showFullDescription ? 'Show less' : 'Show more'}
+                  {showFullDescription ? t('exercise.description.showLess') : t('exercise.description.showMore')}
                 </button>
               )}
             </div>
@@ -977,7 +983,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       {/* Global Playback Speed Control */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
         <div className="flex items-center space-x-4">
-          <span className="text-lg font-semibold text-gray-800">Playback Speed:</span>
+          <span className="text-lg font-semibold text-gray-800">{t('playback.speed')}</span>
           <select
             value={playbackSpeed}
             onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
@@ -993,25 +999,25 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             <option value="2">2x</option>
           </select>
           <div className="flex items-center space-x-2 ml-4">
-            <span className="text-lg font-semibold text-gray-800">Auto play next:</span>
+            <span className="text-lg font-semibold text-gray-800">{t('playback.autoNext')}</span>
             <button
               onClick={() => setAutoPlayNext(!autoPlayNext)}
               className={`px-3 py-1 rounded ${
                 autoPlayNext ? 'bg-green-600' : 'bg-gray-600'
               } text-white hover:opacity-90`}
             >
-              {autoPlayNext ? 'On' : 'Off'}
+              {autoPlayNext ? t('toggle.on') : t('toggle.off')}
             </button>
           </div>
           <div className="flex items-center space-x-2 ml-4">
-            <span className="text-lg font-semibold text-gray-800">Play one octave lower:</span>
+            <span className="text-lg font-semibold text-gray-800">{t('playback.octaveLower')}</span>
             <button
               onClick={() => setPlayOneOctaveLower(!playOneOctaveLower)}
               className={`px-3 py-1 rounded ${
                 playOneOctaveLower ? 'bg-green-600' : 'bg-gray-600'
               } text-white hover:opacity-90`}
             >
-              {playOneOctaveLower ? 'On' : 'Off'}
+              {playOneOctaveLower ? t('toggle.on') : t('toggle.off')}
             </button>
           </div>
         </div>
@@ -1025,7 +1031,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
               onClick={() => togglePieceExpansion(piece.id)}
             >
               <div className="flex items-center space-x-4">
-                <h3 className="text-lg font-semibold">Piece {piece.id}</h3>
+                <h3 className="text-lg font-semibold">{t('piece.title', { id: piece.id })}</h3>
                 <div className="flex space-x-2 items-center">
                   <button
                     onClick={(e) => {
@@ -1038,7 +1044,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                         : 'bg-green-600 hover:bg-green-700'
                     } text-white`}
                   >
-                    {playingPieceId === piece.id ? 'Stop' : 'Play'}
+                    {playingPieceId === piece.id ? t('piece.stop') : t('piece.play')}
                   </button>
                   <button
                     onClick={(e) => {
@@ -1047,7 +1053,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                     }}
                     className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
                   >
-                    Copy
+                    {t('piece.copy')}
                   </button>
                   <button
                     onClick={(e) => {
@@ -1056,13 +1062,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                     }}
                     className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
                   >
-                    Delete
+                    {t('piece.delete')}
                   </button>
                 </div>
               </div>
               <div className="flex items-center">
                 <span className="text-gray-500 mr-2">
-                  {expandedPieces.has(piece.id) ? 'Collapse' : 'Expand'}
+                  {expandedPieces.has(piece.id) ? t('piece.collapse') : t('piece.expand')}
                 </span>
                 <svg
                   className={`w-5 h-5 transform transition-transform ${
@@ -1091,7 +1097,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                 )}
                 <form onSubmit={handleSubmit(piece.id)} className="flex flex-col md:flex-row gap-4 items-end">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Notes (e.g. c d e f | g a b c5):</label>
+                    <label className="block text-sm font-medium mb-1">{t('piece.notes.label')}</label>
                     <input
                       type="text"
                       value={piece.noteInput}
@@ -1100,7 +1106,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Lyrics (e.g. Do Re Mi Fa | Sol La Ti Do):</label>
+                    <label className="block text-sm font-medium mb-1">{t('piece.lyrics.label')}</label>
                     <input
                       type="text"
                       value={piece.lyricsInput}
@@ -1112,7 +1118,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                     type="submit"
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                   >
-                    Update
+                    {t('piece.update')}
                   </button>
                 </form>
               </div>
@@ -1130,18 +1136,18 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         onClick={addPiece}
         className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
       >
-        Add Piece
+        {t('piece.add')}
       </button>
 
       {/* Transpose Modal */}
       {showTransposeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Transpose Piece</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('modal.transpose.title')}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Number of semitones to transpose (-12 to +12):
+                  {t('modal.transpose.semitones')}
                 </label>
                 <input
                   type="number"
@@ -1154,7 +1160,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Number of copies to create (1 to 99):
+                  {t('modal.transpose.copies')}
                 </label>
                 <input
                   type="number"
@@ -1170,13 +1176,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                   onClick={() => setShowTransposeModal(false)}
                   className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
                 >
-                  Cancel
+                  {t('modal.cancel')}
                 </button>
                 <button
                   onClick={confirmCopyPiece}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
-                  Copy
+                  {t('modal.copy')}
                 </button>
               </div>
             </div>
@@ -1188,29 +1194,29 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       {showSaveModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Save Exercise</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('modal.save.title')}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Exercise Name:
+                  {t('modal.save.name')}
                 </label>
                 <input
                   type="text"
                   value={exerciseName}
                   onChange={(e) => setExerciseName(e.target.value)}
                   className="border rounded px-2 py-1 w-full"
-                  placeholder="Enter exercise name"
+                  placeholder={t('modal.save.namePlaceholder')}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Exercise Description (optional):
+                  {t('modal.save.description')}
                 </label>
                 <textarea
                   value={exerciseDescription}
                   onChange={(e) => setExerciseDescription(e.target.value)}
                   className="border rounded px-2 py-1 w-full h-24 resize-none"
-                  placeholder="Enter description for this exercise..."
+                  placeholder={t('modal.save.descriptionPlaceholder')}
                 />
               </div>
               <div className="flex justify-end space-x-2">
@@ -1218,13 +1224,13 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
                   onClick={() => setShowSaveModal(false)}
                   className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
                 >
-                  Cancel
+                  {t('modal.cancel')}
                 </button>
                 <button
                   onClick={confirmSaveExercise}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
-                  Save
+                  {t('modal.save.save')}
                 </button>
               </div>
             </div>
@@ -1236,20 +1242,20 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Delete Exercise</h3>
-            <p className="mb-4">Are you sure you want to delete this exercise?</p>
+            <h3 className="text-lg font-semibold mb-4">{t('modal.delete.title')}</h3>
+            <p className="mb-4">{t('modal.delete.confirm')}</p>
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
               >
-                Cancel
+                {t('modal.cancel')}
               </button>
               <button
                 onClick={confirmDeleteExercise}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
-                Delete
+                {t('modal.delete.delete')}
               </button>
             </div>
           </div>
