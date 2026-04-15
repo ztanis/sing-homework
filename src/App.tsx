@@ -15,7 +15,7 @@ function App() {
               onClick={() => musicNotationRef.current?.toggleMenu()}
               className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
             >
-              {menuShown ? 'Hide Menu' : 'Show Menu'}
+              {menuShown ? 'Hide Exercises' : 'Exercises'}
             </button>
             <button
               onClick={() => musicNotationRef.current?.createNewExercise()}
