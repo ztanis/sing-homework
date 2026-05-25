@@ -1,6 +1,11 @@
 {
   "name": "1-3-5-3-1",
-  "description": "Triad pattern: 1–3–5–3–1 in multiple keys.",
+  "description": "Triad",
+  "variants": [
+    "murmerando",
+    "моя-мама",
+    "а-твій-тато"
+  ],
   "pieces": [
     {
       "noteInput": "c e g e | c",

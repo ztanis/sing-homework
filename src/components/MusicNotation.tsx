@@ -22,6 +22,7 @@ interface Exercise {
   id: string;
   name: string;
   description?: string;
+  variants?: string[];
   pieces: Piece[];
   createdAt: number;
   source?: ExerciseSource;
@@ -47,11 +48,24 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     { default: any }
   >;
 
+  const normalizeDescription = (raw: unknown): string | undefined => {
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw) && raw.every((s) => typeof s === 'string')) return raw.join('\n');
+    return undefined;
+  };
+
+  const normalizeVariants = (raw: unknown): string[] | undefined => {
+    if (!Array.isArray(raw)) return undefined;
+    const result = raw.filter((s): s is string => typeof s === 'string');
+    return result.length > 0 ? result : undefined;
+  };
+
   const presetExercises: Exercise[] = Object.entries(presetModules)
     .map(([path, mod]) => {
       const raw = mod?.default ?? mod;
       const name = typeof raw?.name === 'string' ? raw.name : undefined;
-      const description = typeof raw?.description === 'string' ? raw.description : undefined;
+      const description = normalizeDescription(raw?.description);
+      const variants = normalizeVariants(raw?.variants);
       const piecesRaw = Array.isArray(raw?.pieces) ? raw.pieces : [];
       if (!name || piecesRaw.length === 0) return null;
 
@@ -82,6 +96,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         id: `preset:${idFromFile}`,
         name,
         description,
+        variants,
         pieces,
         createdAt: 0,
         source: 'preset' as const,
@@ -132,6 +147,9 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   });
   const [showHelp, setShowHelp] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [activeVariant, setActiveVariant] = useState<number | null>(null);
+  const [newVariantInput, setNewVariantInput] = useState('');
+  const [showAddVariant, setShowAddVariant] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isAudioReady, setIsAudioReady] = useState(false);
@@ -209,7 +227,10 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   function derivePiece(piece: Piece): DerivedPiece {
     const { notes, error } = parseNotes(piece.noteInput);
-    const lyricTokens = parseLyricsTokens(piece.lyricsInput);
+    const effectiveLyrics = activeVariant !== null && currentExercise.variants?.[activeVariant] !== undefined
+      ? currentExercise.variants[activeVariant]
+      : piece.lyricsInput;
+    const lyricTokens = parseLyricsTokens(effectiveLyrics);
 
     // Align lyrics to note indices (including bars). This lets rendering simply use lyrics[i].
     const alignedLyrics: string[] = new Array(notes.length);
@@ -233,7 +254,8 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   function ensureExerciseShape(e: any): Exercise {
     const name = typeof e?.name === 'string' ? e.name : t('app.newExercise');
-    const description = typeof e?.description === 'string' ? e.description : undefined;
+    const description = normalizeDescription(e?.description);
+    const variants = normalizeVariants(e?.variants);
     const id = typeof e?.id === 'string' ? e.id : Date.now().toString();
     const createdAt = typeof e?.createdAt === 'number' ? e.createdAt : Date.now();
     const source = e?.source === 'preset' ? 'preset' : 'memory';
@@ -261,7 +283,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       };
     });
 
-    return { id, name, description, pieces, createdAt, source };
+    return { id, name, description, variants, pieces, createdAt, source };
   }
 
   const importExerciseFromJson = (json: unknown) => {
@@ -269,7 +291,8 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
     const obj = json as any;
     const name = typeof obj.name === 'string' ? obj.name : undefined;
-    const description = typeof obj.description === 'string' ? obj.description : undefined;
+    const description = normalizeDescription(obj.description);
+    const variants = normalizeVariants(obj.variants);
     const piecesRaw = Array.isArray(obj.pieces) ? obj.pieces : undefined;
 
     if (!name) throw new Error('Invalid JSON: missing "name" (string)');
@@ -301,6 +324,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       id: Date.now().toString(),
       name,
       description,
+      variants,
       pieces,
       createdAt: Date.now(),
     });
@@ -327,6 +351,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     const exportPayload = {
       name: currentExercise.name,
       description: currentExercise.description,
+      variants: currentExercise.variants,
       pieces: currentExercise.pieces.map((p) => ({
         noteInput: p.noteInput,
         lyricsInput: p.lyricsInput,
@@ -497,7 +522,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         }
       });
     });
-  }, [currentExercise]);
+  }, [currentExercise, activeVariant]);
 
   // Initialize Tone.js sampler
   useEffect(() => {
@@ -593,6 +618,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
 
   const loadExercise = (exercise: Exercise) => {
     setCurrentExercise({ ...exercise, source: exercise.source === 'preset' ? 'preset' : 'memory' });
+    setActiveVariant(null);
     setShowMenuWithNotify(false);
   };
 
@@ -1034,6 +1060,100 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
           </div>
         </div>
       )}
+
+      {/* Lyrics Variants */}
+      <div className="bg-amber-50 rounded-lg border border-amber-200">
+        <div className="p-4">
+          <h3 className="text-lg font-semibold text-amber-800 mb-3">{t('exercise.variants.title')}</h3>
+          {currentExercise.variants && currentExercise.variants.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {currentExercise.variants.map((variant, idx) => (
+                <div key={idx} className="flex items-center gap-1">
+                  <button
+                    onClick={() => setActiveVariant(prev => prev === idx ? null : idx)}
+                    className={`px-3 py-1.5 rounded-l-full text-sm font-medium transition-colors ${
+                      activeVariant === idx
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-white text-amber-800 border border-amber-300 hover:bg-amber-100'
+                    }`}
+                  >
+                    {variant || t('exercise.variants.noLyrics')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const updated = currentExercise.variants!.filter((_, i) => i !== idx);
+                      setCurrentExercise({ ...currentExercise, variants: updated.length > 0 ? updated : undefined });
+                      if (activeVariant === idx) setActiveVariant(null);
+                      else if (activeVariant !== null && activeVariant > idx) setActiveVariant(activeVariant - 1);
+                    }}
+                    className={`px-2 py-1.5 rounded-r-full text-sm transition-colors ${
+                      activeVariant === idx
+                        ? 'bg-amber-700 text-amber-200 hover:bg-amber-800'
+                        : 'bg-white text-amber-400 border border-l-0 border-amber-300 hover:text-red-600 hover:bg-red-50'
+                    }`}
+                    title={t('exercise.variants.delete')}
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {activeVariant !== null && (
+            <p className="mb-3 text-xs text-amber-600">{t('exercise.variants.hint')}</p>
+          )}
+          {showAddVariant ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newVariantInput}
+                onChange={(e) => setNewVariantInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const val = newVariantInput.trim();
+                    const prev = currentExercise.variants ?? [];
+                    setCurrentExercise({ ...currentExercise, variants: [...prev, val] });
+                    setNewVariantInput('');
+                    setShowAddVariant(false);
+                  } else if (e.key === 'Escape') {
+                    setNewVariantInput('');
+                    setShowAddVariant(false);
+                  }
+                }}
+                autoFocus
+                className="border border-amber-300 rounded px-2 py-1 flex-1 text-sm"
+                placeholder={t('exercise.variants.addPlaceholder')}
+              />
+              <button
+                onClick={() => {
+                  const val = newVariantInput.trim();
+                  const prev = currentExercise.variants ?? [];
+                  setCurrentExercise({ ...currentExercise, variants: [...prev, val] });
+                  setNewVariantInput('');
+                  setShowAddVariant(false);
+                }}
+                className="px-3 py-1 bg-amber-600 text-white rounded text-sm hover:bg-amber-700"
+              >
+                {t('exercise.variants.add')}
+              </button>
+              <button
+                onClick={() => { setNewVariantInput(''); setShowAddVariant(false); }}
+                className="px-3 py-1 bg-white text-amber-700 border border-amber-300 rounded text-sm hover:bg-amber-100"
+              >
+                {t('modal.cancel')}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddVariant(true)}
+              className="px-3 py-1.5 rounded-full text-sm font-medium bg-white text-amber-700 border border-dashed border-amber-400 hover:bg-amber-100 transition-colors"
+            >
+              + {t('exercise.variants.add')}
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Global Playback Speed Control */}
       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">

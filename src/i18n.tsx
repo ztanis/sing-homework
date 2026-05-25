@@ -62,6 +62,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'exercise.description.showLess': 'Show less',
     'exercise.description.showMore': 'Show more',
 
+    'exercise.variants.title': 'Lyrics Variants',
+    'exercise.variants.hint': 'Variant active — lyrics are temporarily overridden. Click again to deselect.',
+    'exercise.variants.noLyrics': '(no lyrics)',
+    'exercise.variants.addPlaceholder': 'Lyrics for new variant (e.g. Do Re Mi Fa | Sol)',
+    'exercise.variants.add': 'Add',
+    'exercise.variants.delete': 'Remove variant',
+
     'playback.speed': 'Playback Speed:',
     'playback.autoNext': 'Auto play next:',
     'toggle.on': 'On',
@@ -154,6 +161,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'exercise.description.title': 'Опис вправи',
     'exercise.description.showLess': 'Показати менше',
     'exercise.description.showMore': 'Показати більше',
+
+    'exercise.variants.title': 'Варіанти тексту',
+    'exercise.variants.hint': 'Варіант активний — текст тимчасово замінено. Натисніть ще раз, щоб скасувати.',
+    'exercise.variants.noLyrics': '(без тексту)',
+    'exercise.variants.addPlaceholder': 'Текст нового варіанту (напр. До Ре Мі Фа | Соль)',
+    'exercise.variants.add': 'Додати',
+    'exercise.variants.delete': 'Видалити варіант',
 
     'playback.speed': 'Швидкість відтворення:',
     'playback.autoNext': 'Автовідтворення наступної:',
