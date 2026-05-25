@@ -104,6 +104,18 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     })
     .filter(Boolean) as Exercise[];
 
+  const exerciseSlug = (ex: Exercise) => ex.id.replace(/^preset:/, '');
+
+  const parseHash = () => {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    const params = new URLSearchParams(hash);
+    return {
+      slug: params.get('exercise'),
+      variant: params.get('variant'),
+    };
+  };
+
   const [exercises, setExercises] = useState<Exercise[]>(() => {
     const saved = localStorage.getItem('exercises');
     const parsed = saved ? JSON.parse(saved) : [];
@@ -111,10 +123,15 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     return parsed.map((e: any) => ({ ...e, source: e?.source === 'preset' ? 'preset' : 'memory' }));
   });
   const [currentExercise, setCurrentExercise] = useState<Exercise>(() => {
+    const hashInfo = parseHash();
+    if (hashInfo?.slug) {
+      const match = presetExercises.find(e => exerciseSlug(e) === hashInfo.slug);
+      if (match) return match;
+    }
+
     const saved = localStorage.getItem('currentExercise');
     if (saved) return JSON.parse(saved);
 
-    // First visit: default to the first preset exercise (by name).
     if (presetExercises.length > 0) {
       const firstPreset = [...presetExercises].sort((a, b) => a.name.localeCompare(b.name))[0]!;
       return firstPreset;
@@ -147,7 +164,14 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   });
   const [showHelp, setShowHelp] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
-  const [activeVariant, setActiveVariant] = useState<number | null>(null);
+  const [activeVariant, setActiveVariant] = useState<number | null>(() => {
+    const hashInfo = parseHash();
+    if (hashInfo?.variant !== null && hashInfo?.variant !== undefined) {
+      const idx = parseInt(hashInfo.variant, 10);
+      if (!isNaN(idx) && idx >= 0) return idx;
+    }
+    return null;
+  });
   const [newVariantInput, setNewVariantInput] = useState('');
   const [showAddVariant, setShowAddVariant] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
@@ -390,6 +414,52 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     setCurrentExercise(prev => ensureExerciseShape(prev));
     setExercises(prev => prev.map(ensureExerciseShape));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const isPreset = currentExercise.source === 'preset' || currentExercise.id.startsWith('preset:');
+    if (!isPreset) {
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('exercise', exerciseSlug(currentExercise));
+    if (activeVariant !== null) params.set('variant', String(activeVariant));
+    const newHash = `#${params.toString()}`;
+    if (window.location.hash !== newHash) {
+      window.history.replaceState(null, '', newHash);
+    }
+  }, [currentExercise.id, currentExercise.source, activeVariant]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const hashInfo = parseHash();
+      if (!hashInfo?.slug) return;
+
+      const match = presetExercises.find(e => exerciseSlug(e) === hashInfo.slug);
+      if (!match) return;
+
+      setCurrentExercise(prev => {
+        if (prev.id === match.id) return prev;
+        return { ...match };
+      });
+
+      if (hashInfo.variant !== null) {
+        const idx = parseInt(hashInfo.variant, 10);
+        if (!isNaN(idx) && match.variants && idx >= 0 && idx < match.variants.length) {
+          setActiveVariant(idx);
+        } else {
+          setActiveVariant(null);
+        }
+      } else {
+        setActiveVariant(null);
+      }
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   useEffect(() => {

@@ -1,0 +1,54 @@
+{
+  "name": "orpeggio",
+  "description": "",
+  "variants": [
+    "у у у у | у",
+    "и и и и | и"
+  ],
+  "pieces": [
+    {
+      "noteInput": "d4 f#4 a4 d5 | a4 f#4 d4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "d#4 g4 a#4 d#5 | a#4 g4 d#4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "e4 g#4 b4 e5 | b4 g#4 e4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "f4 a4 c5 f5 | c5 a4 f4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "f#4 a#4 c#5 f#5 | c#5 a#4 f#4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "g4 b4 d5 g5 | d5 b4 g4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "g#4 c5 d#5 g#5 | d#5 c5 g#4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "a4 c#5 e5 a5 | e5 c#5 a4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "a#4 d5 f5 a#5 | f5 d5 a#4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "b4 d#5 f#5 b5 | f#5 d#5 b4",
+      "lyricsInput": ""
+    },
+    {
+      "noteInput": "c5 e5 g5 c6 | g5 e5 c5",
+      "lyricsInput": ""
+    }
+  ]
+}
