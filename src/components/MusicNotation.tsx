@@ -113,6 +113,10 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     return {
       slug: params.get('exercise'),
       variant: params.get('variant'),
+      speed: params.get('speed'),
+      transpose: params.get('transpose'),
+      autoPlay: params.get('autoPlay'),
+      octaveLower: params.get('octaveLower'),
     };
   };
 
@@ -175,10 +179,31 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   const [newVariantInput, setNewVariantInput] = useState('');
   const [showAddVariant, setShowAddVariant] = useState(false);
   const [playingPieceId, setPlayingPieceId] = useState<number | null>(null);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    const hashInfo = parseHash();
+    if (hashInfo?.speed) {
+      const v = parseFloat(hashInfo.speed);
+      if (!isNaN(v) && v > 0) return v;
+    }
+    return 1;
+  });
   const [isAudioReady, setIsAudioReady] = useState(false);
-  const [autoPlayNext, setAutoPlayNext] = useState(false);
-  const [playOneOctaveLower, setPlayOneOctaveLower] = useState(false);
+  const [autoPlayNext, setAutoPlayNext] = useState(() => {
+    const hashInfo = parseHash();
+    return hashInfo?.autoPlay === '1';
+  });
+  const [playOneOctaveLower, setPlayOneOctaveLower] = useState(() => {
+    const hashInfo = parseHash();
+    return hashInfo?.octaveLower === '1';
+  });
+  const [globalTranspose, setGlobalTranspose] = useState(() => {
+    const hashInfo = parseHash();
+    if (hashInfo?.transpose) {
+      const v = parseInt(hashInfo.transpose, 10);
+      if (!isNaN(v)) return v;
+    }
+    return 0;
+  });
   const samplerRef = useRef<Tone.Sampler | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [exerciseToDelete, setExerciseToDelete] = useState<string | null>(null);
@@ -250,7 +275,10 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
   }
 
   function derivePiece(piece: Piece): DerivedPiece {
-    const { notes, error } = parseNotes(piece.noteInput);
+    const { notes: rawNotes, error } = parseNotes(piece.noteInput);
+    const notes = globalTranspose !== 0
+      ? rawNotes.map(n => transposeNote(n, globalTranspose))
+      : rawNotes;
     const effectiveLyrics = activeVariant !== null && currentExercise.variants?.[activeVariant] !== undefined
       ? currentExercise.variants[activeVariant]
       : piece.lyricsInput;
@@ -427,11 +455,15 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
     const params = new URLSearchParams();
     params.set('exercise', exerciseSlug(currentExercise));
     if (activeVariant !== null) params.set('variant', String(activeVariant));
+    if (playbackSpeed !== 1) params.set('speed', String(playbackSpeed));
+    if (globalTranspose !== 0) params.set('transpose', String(globalTranspose));
+    if (autoPlayNext) params.set('autoPlay', '1');
+    if (playOneOctaveLower) params.set('octaveLower', '1');
     const newHash = `#${params.toString()}`;
     if (window.location.hash !== newHash) {
       window.history.replaceState(null, '', newHash);
     }
-  }, [currentExercise.id, currentExercise.source, activeVariant]);
+  }, [currentExercise.id, currentExercise.source, activeVariant, playbackSpeed, globalTranspose, autoPlayNext, playOneOctaveLower]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -456,6 +488,21 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
       } else {
         setActiveVariant(null);
       }
+
+      if (hashInfo.speed) {
+        const v = parseFloat(hashInfo.speed);
+        if (!isNaN(v) && v > 0) setPlaybackSpeed(v);
+      } else {
+        setPlaybackSpeed(1);
+      }
+      if (hashInfo.transpose) {
+        const v = parseInt(hashInfo.transpose, 10);
+        if (!isNaN(v)) setGlobalTranspose(v);
+      } else {
+        setGlobalTranspose(0);
+      }
+      setAutoPlayNext(hashInfo.autoPlay === '1');
+      setPlayOneOctaveLower(hashInfo.octaveLower === '1');
     };
 
     window.addEventListener('hashchange', onHashChange);
@@ -592,7 +639,7 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
         }
       });
     });
-  }, [currentExercise, activeVariant]);
+  }, [currentExercise, activeVariant, globalTranspose]);
 
   // Initialize Tone.js sampler
   useEffect(() => {
@@ -1264,6 +1311,32 @@ const MusicNotation = forwardRef<MusicNotationHandle, MusicNotationProps>(functi
             >
               {playOneOctaveLower ? t('toggle.on') : t('toggle.off')}
             </button>
+          </div>
+          <div className="flex items-center space-x-2 ml-4">
+            <span className="text-lg font-semibold text-gray-800">{t('playback.transpose')}</span>
+            <button
+              onClick={() => setGlobalTranspose(prev => prev - 1)}
+              className="px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-bold"
+            >
+              &minus;
+            </button>
+            <span className={`w-8 text-center font-mono font-semibold ${globalTranspose !== 0 ? 'text-blue-700' : 'text-gray-600'}`}>
+              {globalTranspose > 0 ? `+${globalTranspose}` : globalTranspose}
+            </span>
+            <button
+              onClick={() => setGlobalTranspose(prev => prev + 1)}
+              className="px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-bold"
+            >
+              +
+            </button>
+            {globalTranspose !== 0 && (
+              <button
+                onClick={() => setGlobalTranspose(0)}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-800"
+              >
+                {t('playback.transpose.reset')}
+              </button>
+            )}
           </div>
         </div>
       </div>

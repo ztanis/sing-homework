@@ -1,0 +1,16 @@
+{
+    "name": "Chromatic Scale",
+    "description": "Improves pitch precision, agility, and semitone accuracy.",
+    "variants": [
+      "ni",
+      "gee",
+      "ma me mi me",
+      "лі лу лі лу"
+    ],
+    "pieces": [
+      {
+        "noteInput": "c c# d d# | e f f# g | g# a a# b | c5",
+        "lyricsInput": ""
+      }
+    ]
+  }

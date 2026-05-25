@@ -74,6 +74,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toggle.on': 'On',
     'toggle.off': 'Off',
     'playback.octaveLower': 'Play one octave lower:',
+    'playback.transpose': 'Transpose:',
+    'playback.transpose.reset': 'Reset',
 
     'piece.title': 'Piece {id}',
     'piece.play': 'Play',
@@ -174,6 +176,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toggle.on': 'Увімк.',
     'toggle.off': 'Вимк.',
     'playback.octaveLower': 'На октаву нижче:',
+    'playback.transpose': 'Транспозиція:',
+    'playback.transpose.reset': 'Скинути',
 
     'piece.title': 'Фрагмент {id}',
     'piece.play': 'Відтворити',

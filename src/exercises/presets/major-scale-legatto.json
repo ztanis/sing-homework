@@ -1,0 +1,15 @@
+{
+    "name": "Major Scale Legato",
+    "description": "Strengthens connected singing and airflow consistency.",
+    "variants": [
+      "ah",
+      "ee",
+      "oo"
+    ],
+    "pieces": [
+      {
+        "noteInput": "c d e f | g a b c5",
+        "lyricsInput": ""
+      }
+    ]
+  }

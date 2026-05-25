@@ -1,0 +1,14 @@
+{
+    "name": "Lip Roll Siren",
+    "description": "Gentle siren for releasing tension and connecting chest/head voice.",
+    "variants": [
+      "lipsroll",
+      "tonguetrill"
+    ],
+    "pieces": [
+      {
+        "noteInput": "c d e f g a b c5",
+        "lyricsInput": ""
+      }
+    ]
+}
